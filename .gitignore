@@ -33,3 +33,7 @@ logs/
 # OS
 Thumbs.db
 .DS_Store
+
+# Presentation intermediates
+presentation/unpacked/
+presentation/render/

@@ -100,9 +100,48 @@ def cmd_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_demo(_args: argparse.Namespace) -> int:
+    """시연 영상용 데모: 시나리오 → 고수준 추론 로그 → 결과 → 실측 KPI."""
+    from smart_collect.graph import run_collection_graph
+
+    if not (SAMPLE_DIR / "개선요청_영업팀.xlsx").exists():
+        generate_samples()
+    excels = [
+        str(SAMPLE_DIR / "개선요청_영업팀.xlsx"),
+        str(SAMPLE_DIR / "개선요청_생산팀.xlsx"),
+        str(SAMPLE_DIR / "개선요청_품질팀.xlsx"),
+    ]
+
+    print("\n" + "█" * 60)
+    print("  [시나리오] 2026년 6월 시스템 개선요청 취합 메일 + 부서 엑셀 3개")
+    print("  → 메일 분석 → ToT 규칙선택 → 검증 → Self-Correction → 병합/보고")
+    print("█" * 60)
+
+    state = run_collection_graph(
+        _new_request_id(), MOCK_EMAIL["subject"], MOCK_EMAIL["body"], excels
+    )
+
+    print("\n────────── 고수준 추론 로그 (Agent Reasoning) ──────────")
+    for line in state.reasoning_log:
+        print("  " + line)
+
+    print("\n" + (state.result_summary or ""))
+
+    print("\n\n" + "█" * 60)
+    print("  [정량 검증] 라벨링 데이터셋 실측 벤치마크")
+    print("█" * 60)
+    from smart_collect.benchmark import _print_table, run_benchmark
+
+    _print_table(run_benchmark())
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="smart-collect", description="엑셀 취합 자동화 PoC")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    p_demo = sub.add_parser("demo", help="시연 영상용 종합 데모")
+    p_demo.set_defaults(func=cmd_demo)
 
     p_gen = sub.add_parser("gen-samples", help="샘플 메일/엑셀 생성")
     p_gen.set_defaults(func=cmd_gen_samples)
