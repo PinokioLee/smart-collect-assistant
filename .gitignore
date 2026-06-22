@@ -1,0 +1,35 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+
+# Env / secrets
+.env
+*.local
+
+# Data: ignore generated outputs & uploads & samples (regenerable)
+data/merged_files/*
+data/error_reports/*
+data/uploads/
+data/samples/
+!data/merged_files/.gitkeep
+!data/error_reports/.gitkeep
+# 단, 실측 벤치마크 지표(JSON)는 추적 (발표 근거)
+!data/benchmark_metrics.json
+
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+frontend/**/*.tsbuildinfo
+frontend/vite.config.d.ts
+
+# Logs
+logs/
+*.log
+
+# OS
+Thumbs.db
+.DS_Store

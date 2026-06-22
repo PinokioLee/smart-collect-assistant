@@ -1,0 +1,541 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Smart Collect Assistant - Agentic AI 시스템 아키텍처</title>
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs";
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: "base",
+      securityLevel: "loose",
+      themeVariables: {
+        primaryColor: "#e8f3ff",
+        primaryBorderColor: "#2f6fed",
+        primaryTextColor: "#15233d",
+        secondaryColor: "#f4f7fb",
+        tertiaryColor: "#fff8e8",
+        lineColor: "#61708a",
+        fontFamily: "Pretendard, Apple SD Gothic Neo, Segoe UI, sans-serif"
+      }
+    });
+  </script>
+  <style>
+    :root {
+      --ink: #172033;
+      --muted: #61708a;
+      --line: #d7deea;
+      --panel: #ffffff;
+      --soft: #f5f7fb;
+      --blue: #2f6fed;
+      --green: #148f64;
+      --amber: #b56b00;
+      --red: #c43d4b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: #eef2f7;
+      font-family: Pretendard, Apple SD Gothic Neo, Segoe UI, sans-serif;
+      line-height: 1.58;
+    }
+    header {
+      padding: 44px 7vw 30px;
+      background: linear-gradient(135deg, #f9fbff 0%, #e9f2ff 45%, #eef8f1 100%);
+      border-bottom: 1px solid var(--line);
+    }
+    main { padding: 28px 7vw 56px; }
+    section {
+      max-width: 1180px;
+      margin: 0 auto 24px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 26px;
+      box-shadow: 0 10px 30px rgba(30, 45, 75, 0.06);
+    }
+    h1, h2, h3 { line-height: 1.25; margin: 0 0 14px; }
+    h1 { font-size: clamp(30px, 4vw, 50px); max-width: 980px; }
+    h2 { font-size: 25px; margin-top: 4px; }
+    h3 { font-size: 18px; color: #233354; }
+    p { margin: 0 0 12px; }
+    ul { margin: 8px 0 0 20px; padding: 0; }
+    li { margin: 5px 0; }
+    .subtitle { max-width: 920px; color: #2e3c57; font-size: 18px; }
+    .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.72);
+      border: 1px solid var(--line);
+      color: #2b3a55;
+      font-size: 13px;
+      font-weight: 650;
+    }
+    .grid { display: grid; gap: 14px; }
+    .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--soft);
+      padding: 16px;
+      min-height: 100%;
+    }
+    .card strong { display: block; margin-bottom: 6px; color: #172a4a; }
+    .tag {
+      display: inline-block;
+      margin: 0 6px 6px 0;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #183b2c;
+      background: #e7f7ef;
+      border: 1px solid #bde7d1;
+    }
+    .tag.blue { color: #17386d; background: #e8f1ff; border-color: #c7dcff; }
+    .tag.amber { color: #704100; background: #fff2d8; border-color: #f0d29c; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      font-size: 14px;
+    }
+    th, td { border: 1px solid var(--line); padding: 10px 11px; vertical-align: top; }
+    th { background: #f0f4fa; text-align: left; }
+    .mermaid-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfdff;
+      padding: 18px;
+      margin-top: 14px;
+    }
+    .note {
+      border-left: 4px solid var(--blue);
+      background: #f2f7ff;
+      padding: 12px 14px;
+      border-radius: 6px;
+      color: #233654;
+    }
+    .risk { border-left-color: var(--red); background: #fff4f5; }
+    .ok { border-left-color: var(--green); background: #f0fbf6; }
+    code {
+      background: #eef2f7;
+      border: 1px solid #dce3ef;
+      border-radius: 5px;
+      padding: 1px 5px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.95em;
+    }
+    @media (max-width: 840px) {
+      header, main { padding-left: 18px; padding-right: 18px; }
+      section { padding: 18px; }
+      .grid.two, .grid.three { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Smart Collect Assistant 시스템 아키텍처</h1>
+    <p class="subtitle">취합 요청 메일 분석, 작성 가이드 생성, 제출 현황 추적, 엑셀 병합 및 검증을 상태 기반 Agentic AI 워크플로로 설계한다.</p>
+    <div class="meta">
+      <span class="chip">대상 산출물: 08079_이형진_산출물 복사본.md</span>
+      <span class="chip">참고 교재: Agentic AI Architectures</span>
+      <span class="chip">주요 패턴: Magnetic Sticky Router</span>
+      <span class="chip">보안: Human-in-the-Loop</span>
+    </div>
+  </header>
+
+  <main>
+    <section>
+      <h2>1. 아키텍처 판단 요약</h2>
+      <div class="grid three">
+        <div class="card">
+          <strong>문제 성격</strong>
+          여러 작성자, 메일, 파일, 마감, 검증 규칙이 하나의 취합 케이스 안에서 계속 상태를 바꾼다. 단순 챗봇보다 상태 저장 워크플로가 적합하다.
+        </div>
+        <div class="card">
+          <strong>PoC 우선 범위</strong>
+          엑셀 병합/검증, 제출 현황 추적, AI 기반 요청 분석/가이드 생성을 우선 구현한다. SMS와 완전 자동 발송은 승인 기반 후순위로 둔다.
+        </div>
+        <div class="card">
+          <strong>핵심 설계 원칙</strong>
+          LLM은 해석, 분해, 초안 생성, 라우팅에 집중한다. 엑셀 병합과 검증은 결정론적 도구로 실행해 재현성과 감사 가능성을 확보한다.
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>2. 선택한 Agent 디자인 패턴</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>패턴</th>
+            <th>적용 위치</th>
+            <th>선택 이유</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="tag blue">Magnetic Sticky Router</span></td>
+            <td>취합 케이스 전체 오케스트레이션</td>
+            <td>메일 분석, 제출 추적, 검증, 리마인드, 보고가 상태에 따라 반복 분기되므로 중앙 라우터가 최신 State를 보고 다음 전문 에이전트를 선택한다.</td>
+          </tr>
+          <tr>
+            <td><span class="tag blue">Router & Specialist</span></td>
+            <td>메일 분석, 가이드 생성, 제출 추적, 엑셀 처리, 보고서 생성</td>
+            <td>한 거대 에이전트에 모든 도구를 주지 않고, 역할별 전문 에이전트와 최소 권한 도구로 나눠 품질과 보안을 높인다.</td>
+          </tr>
+          <tr>
+            <td><span class="tag">Planning + ReAct</span></td>
+            <td>요청 메일 해석, 누락 정보 확인, 제출/검증 후속 조치</td>
+            <td>취합 요청에서 목적, 항목, 기한, 대상자, 첨부 양식을 분리하고 필요한 도구를 순차 호출해야 한다.</td>
+          </tr>
+          <tr>
+            <td><span class="tag">Reflection</span></td>
+            <td>작성 가이드/메일 초안 품질 검토, 검증 결과 요약 검토</td>
+            <td>작성자가 이해하기 쉬운 안내문과 오류 보고서는 품질 기준이 중요하므로 초안 생성 후 비평/개선 루프를 둔다.</td>
+          </tr>
+          <tr>
+            <td><span class="tag amber">Tool Use + MCP Gateway</span></td>
+            <td>Outlook/메일, 파일 저장소, Excel 파서, 알림, 보고서 생성</td>
+            <td>여러 내부 시스템을 에이전트 안전 함수로 노출해야 하므로 단일 MCP 게이트웨이로 도구 접근을 통제한다.</td>
+          </tr>
+          <tr>
+            <td><span class="tag amber">Human-in-the-Loop</span></td>
+            <td>메일/SMS 발송, 미제출 리마인드, 최종 파일 확정</td>
+            <td>오발송, 개인정보, 잘못된 최종 취합을 막기 위해 위험 행동은 담당자 승인 후 실행한다.</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="note">결론: 이 시스템은 "순차적 핸드오프"만으로도 PoC를 만들 수 있지만, 실제 업무 흐름은 마감 상태와 오류 상태에 따라 되돌아가야 한다. 따라서 중앙 라우터가 전체 State를 읽고 전문 에이전트를 호출하는 구조가 더 적합하다.</p>
+    </section>
+
+    <section>
+      <h2>3. 전체 시스템 아키텍처 Flowchart</h2>
+      <div class="mermaid-wrap">
+        <pre class="mermaid">
+flowchart TB
+  User["취합 담당자"]
+  Writer["작성자"]
+
+  subgraph UI["업무 UI / AG-UI"]
+    Dashboard["취합 케이스 대시보드"]
+    Approval["승인 카드<br/>메일 발송 · 리마인드 · 최종 확정"]
+    Review["분석 결과 / 검증 결과 리뷰"]
+  end
+
+  subgraph Runtime["Agent Runtime"]
+    Orchestrator["Collection Orchestrator<br/>Magnetic Sticky Router"]
+    State[("CollectionCase State<br/>요청/대상자/제출/검증/감사")]
+    Guardrail["Guardrail Layer<br/>권한 · PII · 발송 승인 · 루프 제한"]
+  end
+
+  subgraph Agents["Specialist Agents"]
+    RequestAgent["Request Analysis Agent<br/>Planning + ReAct"]
+    GuideAgent["Guide & Mail Draft Agent<br/>Reflection"]
+    TrackingAgent["Submission Tracking Agent<br/>Event/State Monitor"]
+    ExcelAgent["Excel Merge & Validation Agent<br/>Deterministic Tools"]
+    ReportAgent["Report Agent<br/>Summary + Evidence"]
+    CriticAgent["Quality Critic Agent<br/>Reflection / Judge"]
+  end
+
+  subgraph Tools["MCP Gateway / Tool Layer"]
+    MailTool["Mail Tool<br/>read thread / draft / send"]
+    FileTool["File Storage Tool<br/>upload / download / version"]
+    ExcelTool["Excel Tool<br/>pandas / openpyxl / validation"]
+    NotifyTool["Notification Tool<br/>SMS / 사내 알림"]
+    AuditTool["Audit Log Tool<br/>trace / cost / decision"]
+  end
+
+  subgraph Data["Data Stores"]
+    CaseDB[("Case DB")]
+    ObjectStore[("Uploaded Excel / Reports")]
+    VectorStore[("Template & Policy Knowledge")]
+    Ops[("AgentOps Logs")]
+  end
+
+  User --> Dashboard
+  Writer --> MailTool
+  Dashboard --> Orchestrator
+  Approval --> Guardrail
+  Review --> Orchestrator
+  Orchestrator <--> State
+  Orchestrator --> Guardrail
+  Guardrail --> RequestAgent
+  Guardrail --> GuideAgent
+  Guardrail --> TrackingAgent
+  Guardrail --> ExcelAgent
+  Guardrail --> ReportAgent
+  RequestAgent --> CriticAgent
+  GuideAgent --> CriticAgent
+  ReportAgent --> CriticAgent
+  RequestAgent --> MailTool
+  RequestAgent --> FileTool
+  RequestAgent --> VectorStore
+  GuideAgent --> MailTool
+  TrackingAgent --> MailTool
+  TrackingAgent --> NotifyTool
+  ExcelAgent --> FileTool
+  ExcelAgent --> ExcelTool
+  ReportAgent --> MailTool
+  ReportAgent --> FileTool
+  State --> CaseDB
+  FileTool --> ObjectStore
+  AuditTool --> Ops
+  Guardrail --> AuditTool
+        </pre>
+      </div>
+    </section>
+
+    <section>
+      <h2>4. 핵심 State 모델</h2>
+      <div class="grid two">
+        <div class="card">
+          <h3>CollectionCase</h3>
+          <ul>
+            <li><code>case_id</code>, <code>title</code>, <code>owner</code>, <code>deadline</code></li>
+            <li><code>request_spec</code>: 목적, 작성 항목, 제출 방법, 주의사항</li>
+            <li><code>recipients</code>: 이름, 부서, 이메일, 연락처, 제출 상태</li>
+            <li><code>guide_draft</code>, <code>mail_draft</code>, <code>approval_status</code></li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Execution Evidence</h3>
+          <ul>
+            <li><code>submissions</code>: 파일명, 제출자, 수신 시간, 버전</li>
+            <li><code>validation_results</code>: 누락, 형식 오류, 중복 의심, 정상 건수</li>
+            <li><code>final_artifacts</code>: 취합본, 오류 보고서, 제출 현황 보고서</li>
+            <li><code>audit_trail</code>: 도구 호출, 승인자, 판단 근거, 실패/재시도</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>5. 업무 Flowchart</h2>
+      <div class="mermaid-wrap">
+        <pre class="mermaid">
+flowchart TD
+  A["취합 요청 등록<br/>메일/본문/첨부 양식"] --> B["요청 분석 Agent<br/>목적·항목·기한·대상 추출"]
+  B --> C{"분석 신뢰도 충분?"}
+  C -- "아니오" --> D["담당자에게 누락 정보 질문<br/>Ejection/HITL"]
+  D --> B
+  C -- "예" --> E["작성 가이드 및 메일 초안 생성"]
+  E --> F["Critic Agent 품질 검토<br/>쉬운 설명·누락·모호성 점검"]
+  F --> G{"승인 필요 행동?"}
+  G -- "메일/SMS 발송" --> H["담당자 승인 카드"]
+  H --> I{"승인?"}
+  I -- "거부/수정" --> E
+  I -- "승인" --> J["메일/알림 발송<br/>이력 저장"]
+  G -- "초안만 저장" --> J
+  J --> K["제출 현황 모니터링<br/>회신 메일/업로드 감지"]
+  K --> L{"마감 임박 또는 미제출 있음?"}
+  L -- "예" --> M["미제출자 리마인드 초안"]
+  M --> H
+  L -- "아니오" --> N["제출 파일 목록화"]
+  N --> O["Excel 병합 Tool<br/>표준 컬럼 매핑"]
+  O --> P["검증 Tool<br/>필수값·형식·중복"]
+  P --> Q{"오류 있음?"}
+  Q -- "예" --> R["오류 보고서 생성<br/>수정 요청 후보 작성"]
+  R --> H
+  Q -- "아니오" --> S["최종 취합본 및 제출현황보고서 생성"]
+  S --> T["담당자 최종 확정"]
+  T --> U["완료 보고 메일 초안 생성"]
+        </pre>
+      </div>
+    </section>
+
+    <section>
+      <h2>6. 주요 시퀀스 다이어그램</h2>
+      <div class="mermaid-wrap">
+        <pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor Manager as 취합 담당자
+  participant UI as 업무 UI
+  participant Orch as Collection Orchestrator
+  participant State as CollectionCase State
+  participant Req as Request Analysis Agent
+  participant Draft as Guide/Mail Draft Agent
+  participant Critic as Quality Critic Agent
+  participant MCP as MCP Gateway
+  participant Excel as Excel Validation Tool
+  participant Writer as 작성자
+
+  Manager->>UI: 취합 요청 메일과 양식 등록
+  UI->>Orch: start_collection_case()
+  Orch->>State: 케이스 State 생성
+  Orch->>Req: 요청 분석 지시
+  Req->>MCP: 메일 본문/첨부 양식 읽기
+  MCP-->>Req: 제목, 본문, 파일 메타데이터
+  Req->>State: request_spec 저장
+  Orch->>Draft: 작성 가이드/메일 초안 생성
+  Draft->>Critic: 초안 품질 검토 요청
+  Critic-->>Draft: 누락/모호성/톤 개선 의견
+  Draft->>State: guide_draft, mail_draft 저장
+  Orch->>UI: 승인 카드 표시
+  Manager->>UI: 발송 승인
+  UI->>Orch: approve_send()
+  Orch->>MCP: 수신자별 메일 발송
+  MCP->>Writer: 취합 요청 메일 전달
+  Writer->>MCP: 작성 파일 회신
+  MCP->>Orch: 제출 이벤트 발행
+  Orch->>State: 제출 상태 업데이트
+  Manager->>UI: 엑셀 병합 실행
+  UI->>Orch: merge_and_validate()
+  Orch->>MCP: 제출 파일 다운로드
+  MCP-->>Orch: 파일 목록
+  Orch->>Excel: 병합 및 검증 실행
+  Excel-->>Orch: 취합본, 오류 목록, 중복 의심 결과
+  Orch->>State: validation_results, final_artifacts 저장
+  Orch->>UI: 검증 결과와 최종 확정 카드 표시
+        </pre>
+      </div>
+    </section>
+
+    <section>
+      <h2>7. 에이전트별 책임과 도구 권한</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>에이전트</th>
+            <th>책임</th>
+            <th>허용 도구</th>
+            <th>금지/제한</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Collection Orchestrator</td>
+            <td>State 기반 라우팅, 작업 분해, 완료 조건 판단, 재시도 제어</td>
+            <td>State DB, Agent 호출, Audit Log</td>
+            <td>직접 메일 발송/파일 수정 금지</td>
+          </tr>
+          <tr>
+            <td>Request Analysis Agent</td>
+            <td>취합 요청 목적, 작성 항목, 기한, 제출 방법, 대상 추출</td>
+            <td>메일 읽기, 첨부 메타데이터 읽기, 템플릿 검색</td>
+            <td>발송/삭제/수정 권한 없음</td>
+          </tr>
+          <tr>
+            <td>Guide & Mail Draft Agent</td>
+            <td>작성자용 쉬운 가이드와 메일 초안 생성</td>
+            <td>템플릿 검색, 초안 저장</td>
+            <td>승인 없는 발송 금지</td>
+          </tr>
+          <tr>
+            <td>Submission Tracking Agent</td>
+            <td>회신 메일과 업로드 이벤트 감지, 제출 상태 갱신, 미제출자 산출</td>
+            <td>메일 읽기, 파일 메타데이터 읽기, 상태 업데이트</td>
+            <td>리마인드 자동 발송은 승인 필요</td>
+          </tr>
+          <tr>
+            <td>Excel Merge & Validation Agent</td>
+            <td>표준 컬럼 매핑, 병합 실행, 필수값/형식/중복 검증</td>
+            <td>Excel 파서, 파일 읽기/쓰기, 검증 규칙</td>
+            <td>업무 내용 임의 수정 금지, 오류는 보고/요청만 수행</td>
+          </tr>
+          <tr>
+            <td>Report Agent</td>
+            <td>제출률, 오류 건수, 최종 산출물 링크, 후속 액션 요약</td>
+            <td>State 읽기, 보고서 생성, 메일 초안 저장</td>
+            <td>완료 보고 자동 발송은 승인 필요</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>8. 배포 및 통합 구조</h2>
+      <div class="grid two">
+        <div class="card">
+          <h3>PoC 구조</h3>
+          <ul>
+            <li>웹 UI: 취합 케이스 등록, 승인, 검증 결과 확인</li>
+            <li>Backend API: 케이스/수신자/제출/검증 결과 관리</li>
+            <li>Agent Runtime: LangGraph류 State-Node-Edge 워크플로</li>
+            <li>Excel Tool: pandas/openpyxl 기반 결정론적 병합/검증</li>
+            <li>메일 연동: 초기에는 읽기/초안 생성 중심, 발송은 승인 후</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>운영 확장 구조</h3>
+          <ul>
+            <li>MCP Gateway: 메일, 파일 저장소, 알림, 보고서 도구의 단일 진입점</li>
+            <li>AgentOps: 추론 단계, 도구 호출, 토큰 비용, 실패율, 승인 이력 추적</li>
+            <li>권한 스코프: 읽기, 초안 작성, 발송, 파일 생성 권한 분리</li>
+            <li>버전 관리: 프롬프트, 검증 규칙, MCP manifest, Excel 템플릿 버전 고정</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>9. 보안, 품질, 실패 대응</h2>
+      <div class="grid three">
+        <div class="note risk">
+          <h3>오발송 방지</h3>
+          메일/SMS/리마인드는 모두 담당자 승인 후 실행한다. 수신자, 제목, 본문, 첨부 파일을 승인 카드에서 확인하게 한다.
+        </div>
+        <div class="note">
+          <h3>AI 판단 한계</h3>
+          LLM은 작성 기준을 제안하고 설명하지만, 실제 데이터 수정과 최종 확정은 담당자와 결정론적 검증 도구가 담당한다.
+        </div>
+        <div class="note ok">
+          <h3>감사 가능성</h3>
+          모든 도구 호출, 승인, 검증 결과, 생성 파일 버전을 케이스 감사 로그에 남겨 결과 신뢰도를 설명할 수 있게 한다.
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>실패 상황</th>
+            <th>대응</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>메일 분석 신뢰도 낮음</td>
+            <td>추출 결과를 확정하지 않고 담당자에게 누락 항목 확인을 요청한다.</td>
+          </tr>
+          <tr>
+            <td>Excel 양식이 예상과 다름</td>
+            <td>컬럼 매핑 후보를 제시하고, 담당자 승인 후 병합한다. 매크로/복잡 양식은 범위 밖으로 분류한다.</td>
+          </tr>
+          <tr>
+            <td>제출 파일 오류 발생</td>
+            <td>오류 행, 컬럼, 원인, 수정 요청 문구를 보고서로 생성하되 원본 파일은 수정하지 않는다.</td>
+          </tr>
+          <tr>
+            <td>에이전트 반복 루프 과다</td>
+            <td>최대 루프 수와 비용 한도를 두고 초과 시 담당자 검토 상태로 전환한다.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>10. 다음 구현 순서</h2>
+      <div class="mermaid-wrap">
+        <pre class="mermaid">
+flowchart LR
+  P1["1. 표준 취합 케이스 DB<br/>수신자·제출·파일 상태"] --> P2["2. Excel 병합/검증 Tool<br/>필수값·형식·중복"]
+  P2 --> P3["3. Request Analysis Agent<br/>메일 분석·작성 항목 추출"]
+  P3 --> P4["4. Guide/Mail Draft + Approval UI<br/>HITL"]
+  P4 --> P5["5. 제출 추적 Agent<br/>메일 회신/업로드 감지"]
+  P5 --> P6["6. Report Agent + AgentOps<br/>감사 로그·운영 지표"]
+        </pre>
+      </div>
+      <p class="note">PoC 성공 기준은 기존 산출물의 KPI와 연결한다. 취합/검증 시간 70% 단축, 제출 현황 확인 시간 80% 단축, 작성 오류 및 누락 50% 감소를 측정 지표로 둔다.</p>
+    </section>
+  </main>
+</body>
+</html>

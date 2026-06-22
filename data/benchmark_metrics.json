@@ -1,0 +1,54 @@
+{
+  "dataset": {
+    "files": 4,
+    "ground_truth_errors": 10
+  },
+  "detection_accuracy": {
+    "ground_truth_errors": 10,
+    "detected": 10,
+    "true_positive": 10,
+    "false_positive": 0,
+    "false_negative": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0
+  },
+  "reproducibility": {
+    "runs": 10,
+    "error_count_mean": 10,
+    "error_count_stdev": 0.0,
+    "time_mean_ms": 13.46,
+    "time_stdev_ms": 1.828
+  },
+  "speed": {
+    "total_rows": 46,
+    "auto_seconds": 0.0838,
+    "throughput_rows_per_sec": 549.0,
+    "manual_estimate_seconds": 930,
+    "manual_estimate_min": 15.5,
+    "speedup_x": 11094.0,
+    "reduction_pct": 99.99
+  },
+  "self_correction": {
+    "errors_before": 10,
+    "fixable": 6,
+    "applied": 6,
+    "auto_fix_rate_pct": 100.0,
+    "error_rows_recovered": 6,
+    "rework_reduction_pct": 60.0
+  },
+  "tot_discrimination": {
+    "scenario": "한 양식에서 '요청사유' 컬럼 누락(드리프트)",
+    "candidate_scores": {
+      "A.Strict": 0.786,
+      "B.Balanced": 1.0,
+      "C.Loose": 1.0
+    },
+    "selected": "B.Balanced",
+    "strict_false_positive_cols": [
+      "요청사유"
+    ],
+    "selected_false_positive_cols": [],
+    "false_positives_avoided": 1
+  }
+}
