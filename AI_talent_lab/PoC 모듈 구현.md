@@ -40,6 +40,22 @@ Report Agent
 
 * Report Agent는 제출 현황, 오류 내역, 병합 결과를 최종 보고서 형태로 정리한다.
 
+**1.1-1 에이전트별 적용 기술**
+
+멘토 피드백을 반영하여 각 Agent가 어떤 기술을 사용했고, 그 기술을 어떤 방식으로 적용했는지 역할별로 정리한다. 1차 PoC에서 실제 구현된 범위와 후속 확장 범위를 구분하여 작성하였다.
+
+| Agent | 담당 역할 | 사용 기술 | 적용 방식 |
+| --- | --- | --- | --- |
+| Supervisor Agent | 전체 흐름 제어, 다음 단계 선택, 검증 규칙 계획 | LangGraph StateGraph, AgentState, Supervisor Routing, Tree of Thoughts | `AgentState`의 현재 상태를 기준으로 Requirement Analysis -> Planning -> Excel Validation -> Self-Correction -> Merge -> Error Report -> Report 흐름을 제어한다. 검증 규칙은 Strict/Balanced/Loose 후보를 생성한 뒤 실제 업로드 컬럼과 비교하여 선택한다. |
+| Requirement Analysis Agent | 취합 요청 메일 분석, 작성 항목/마감/주의사항 추출 | Azure OpenAI, 휴리스틱 폴백, Pydantic 구조화 모델, JSON Output Parsing | 메일 제목과 본문에서 `request_title`, `deadline`, `required_fields`, `cautions`, `missing_info`를 추출한다. Azure 키가 없거나 호출 실패 시 휴리스틱 분석으로 폴백하여 기본 PoC가 계속 동작한다. |
+| Excel Validation Agent | 제출 엑셀 검증, 정상 데이터 병합, 오류 보고서 생성 | pandas, openpyxl, 결정론적 검증 규칙 | 필수값 누락, 날짜 형식 오류, 허용되지 않은 코드값, 중복 데이터를 규칙 기반으로 검증한다. 정상 행만 병합 파일로 저장하고, 오류 행은 별도 오류 보고서로 생성한다. |
+| Self-Correction Agent | 안전한 오류 자동 교정 및 재검증 | Self-Refine/Self-Correction 패턴, 날짜 정규화, 코드값 매핑, 재검증 루프 | 날짜 형식과 코드값처럼 원본 의미가 보존되는 오류만 자동 교정한다. 교정 후 재검증하여 오류 수가 줄어든 경우만 채택하고, 필수값 누락/중복은 재제출 대상으로 남긴다. |
+| Report Agent | 최종 결과 요약, 다음 조치 정리 | Pydantic 결과 객체, 템플릿 기반 리포트 생성, Console/File Log | 파일 수, 전체 행 수, 정상 행 수, 오류 유형, 생성 파일, 다음 조치를 관리자용 요약으로 정리한다. 실행 흐름은 `agent_handoff_history`와 `reasoning_log`로 확인할 수 있게 한다. |
+| Guide Draft Agent | 작성자용 가이드와 요청 메일 초안 생성 | 요구사항 분석 결과, 템플릿 기반 문장 생성, FastAPI `/api/guide` | 추출된 작성 항목과 제출 기한을 바탕으로 작성 가이드와 요청 메일 초안을 생성한다. 실제 발송 전에는 사용자 승인 단계를 거치도록 분리하였다. |
+| Submission Tracking Agent | 제출자/미제출자/지연 제출자 분류 | 규칙 기반 문자열 매칭, 샘플 작성자 목록, mock 제출 데이터 | 샘플 작성자 목록과 제출 파일명 또는 제출 식별자를 비교하여 제출 상태를 계산한다. 실제 Gmail 회신 메일 기반 추적은 후속 확장 범위이다. |
+| Email Agent | 메일 초안 발송 Adapter 관리 | MockEmailAdapter, GmailApiEmailAdapter, Human-in-the-loop 승인 구조 | 기본값은 실제 발송 없는 mock 모드이다. `EMAIL_SEND_MODE=gmail`과 OAuth credentials가 설정된 경우에만 Gmail API로 발송한다. Gmail 수신함 검색/첨부 수집은 후속 Adapter 확장 범위이다. |
+| RAG Reference Agent | 기준 문서 검색 인터페이스 제공 | 로컬 키워드 검색, `retrieve_reference_documents`, confidence score | 1차 PoC에서는 핵심 실행 경로에 필수로 넣지 않고, 작성 기준이 불명확한 경우 호출 가능한 검색 Tool로 분리하였다. FAISS/Embedding 기반 Vector Search는 후속 확장 범위이다. |
+
 * **동작 원리:** Supervisor Agent가 상태값을 기준으로 다음 Agent를 선택한다.
 
   * 사용자가 취합 요청 분석을 실행하면 Supervisor Agent가 요청을 수신한다.
