@@ -1,7 +1,7 @@
 """최종 발표 PPT 빌드 — 템플릿의 run 텍스트를 정밀 교체(서식 보존) + 아키텍처 삽입.
 
 수치는 실측 벤치마크(data/benchmark_metrics.json)에서 도출:
-  검출 F1 100% / 처리 0.08초·549행/초 / 자가교정 100%·재작업 60%↓ / 재현성 표준편차 0
+  검출 F1 100% / 처리 약 0.08초·500행+/초 / 자가교정 100%·재작업 60%↓ / 재현성 표준편차 0
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ OUTPUT = ROOT / "AI_Master_최종발표_이형진_08079.pptx"
 DIAGRAM = ROOT / "architecture.png"
 
 MENTEE = "이형진, 08079"
-MENTOR = "[멘토님 성함]"  # TODO: 멘토 성함 확인 후 교체
+MENTOR = "AI Master 멘토"
 SUBJECT = "Smart Collect Assistant (엑셀 취합 자동화)"
 
 
@@ -58,7 +58,7 @@ SPEAKER_NOTES = {
         "그래서 취합 요청 메일을 분석해 검증기준을 만들고, 제출 엑셀을 규칙기반으로 검증→자가교정"
         "→병합하는 멀티에이전트를 만들었습니다. Requirement·Supervisor·Validation·Self-"
         "Correction·Report 다섯 에이전트가 LangGraph 위에서 협업합니다.\n"
-        "성과는 세 수치입니다. ① 오류 검출 F1 100%, 오탐·미탐 0 ② 46행을 0.08초, 초당 549행 처리 "
+        "성과는 세 수치입니다. ① 오류 검출 F1 100%, 오탐·미탐 0 ② 46행을 약 0.08초, 초당 500행 이상 처리 "
         "③ 자가교정으로 재작업 60% 감소. 한 문장으로, LangGraph에 Tree of Thoughts와 "
         "Self-Correction을 더해 취합 검증을 F1 100%·재현성 표준편차 0으로 자동화했습니다."
     ),
@@ -69,7 +69,7 @@ SPEAKER_NOTES = {
         "검증, Self-Correction이 자동교정, Report가 요약합니다. 전체를 LangGraph StateGraph가 "
         "상태 기반으로 오케스트레이션합니다.\n"
         "기술 선택 셋. ① LangGraph — 단일 에이전트·단순 Chain으로는 분석·검증·교정·보고의 책임 "
-        "분리와 상태 관리가 어렵습니다. 조건분기로 6개 노드를 오케스트레이션했습니다.\n"
+        "분리와 상태 관리가 어렵습니다. 조건분기로 7개 노드를 오케스트레이션했습니다.\n"
         "② 핵심인 Tree of Thoughts와 Self-Correction — 단일 규칙생성은 양식 드리프트에 취약하고 "
         "단순 검증은 오류를 검출만 합니다. 규칙 후보 3개를 게이트로 고르고, 자동교정은 Self-Refine "
         "루프로 처리했습니다. ToT는 Yao 2023, Self-Refine은 Madaan 2023 참고.\n"
@@ -128,8 +128,8 @@ def main() -> None:
         "정성적 지표": "오탐 0·미탐 0",
     })
     replace_runs(nm["Text 19"], {
-        "[수치 2]": "0.08초", "성과 지표 설명": "46행 처리",
-        "정량적 지표": "549행/초",
+        "[수치 2]": "약 0.08초", "성과 지표 설명": "46행 처리",
+        "정량적 지표": "500행+/초",
     })
     replace_runs(nm["Text 21"], {
         "[수치 3]": "60%↓",
@@ -150,7 +150,7 @@ def main() -> None:
         "단순 Chain 방식으로 해결되지 않는 이유와 이 기술이 필요한 근거를 서술하세요.":
             "단일 Agent/단순 Chain은 분석·검증·교정·보고의 책임 분리와 상태 관리가 어렵습니다.",
         "어떻게 구현했는지 핵심 포인트를 1~2줄로 작성하세요.":
-            "State 기반 조건분기로 6개 노드를 오케스트레이션하고 RAG 필요 시에만 분기합니다.",
+            "State 기반 조건분기로 7개 노드를 오케스트레이션하고, 기준 검색은 선택 기능으로 분리했습니다.",
     })
     replace_runs(nm["Text 20"], {"기술명 (예: RAG + Vector DB)": "Tree of Thoughts + Self-Correction"})
     replace_runs(nm["Text 21"], {

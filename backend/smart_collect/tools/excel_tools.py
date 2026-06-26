@@ -21,6 +21,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from ..config import DATA_DIR
 from ..state import ErrorDetail, ExcelValidationResult, ValidationRule
 
 # 데이터 첫 행의 엑셀 행 번호 (헤더 1행 다음)
@@ -278,6 +279,70 @@ def merge_valid_rows(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     merged.to_excel(output_path, index=False, engine="openpyxl")
     return str(output_path), len(merged)
+
+
+def update_common_fields(
+    excel_files: list[str],
+    target_field: str,
+    new_value: str,
+    *,
+    old_value: str | None = None,
+    add_if_missing: bool = True,
+    output_dir: str | Path | None = None,
+) -> dict:
+    """여러 엑셀 파일의 공통 항목(컬럼)을 한 번에 일괄 수정한다.
+
+    실무 시나리오: 공통 항목(취합월/마감일/기준 등)이 바뀌면 파일 N개를 모두 열어
+    반복 수정해야 하는 문제를, 한 번의 호출로 전체 반영한다.
+
+    - old_value 가 주어지면 그 값과 일치하는 셀만 new_value 로 교체.
+    - old_value 가 None 이면 해당 컬럼 전체를 new_value 로 설정.
+    - 컬럼이 없고 add_if_missing 이면 컬럼을 추가하고 new_value 로 채움.
+    - 원본은 보존하고 결과는 별도 파일(_updated)로 저장한다.
+
+    Returns: {updated_files, update_count, details, error_list}
+    """
+    files = load_excel_files(excel_files)
+    out_base = Path(output_dir) if output_dir else (DATA_DIR / "updated_files")
+    out_base.mkdir(parents=True, exist_ok=True)
+
+    updated_files: list[str] = []
+    details: list[dict] = []
+    error_list: list[dict] = []
+    total_updates = 0
+
+    for f in files:
+        df = f.df.copy()
+        changed = 0
+        if target_field not in df.columns:
+            if add_if_missing:
+                df[target_field] = new_value
+                changed = len(df)
+            else:
+                error_list.append({"file": f.name, "reason": f"'{target_field}' 컬럼 없음"})
+                continue
+        else:
+            col = df[target_field].astype("object")
+            if old_value is None:
+                changed = int((col.map(lambda v: str(v) != new_value)).sum())
+                df[target_field] = new_value
+            else:
+                mask = col.map(lambda v: str(v).strip() == str(old_value).strip())
+                changed = int(mask.sum())
+                df.loc[mask, target_field] = new_value
+
+        out_path = out_base / f"{Path(f.name).stem}_updated.xlsx"
+        df.to_excel(out_path, index=False, engine="openpyxl")
+        updated_files.append(str(out_path))
+        details.append({"file": f.name, "updated_cells": changed, "output": str(out_path)})
+        total_updates += changed
+
+    return {
+        "updated_files": updated_files,
+        "update_count": total_updates,
+        "details": details,
+        "error_list": error_list,
+    }
 
 
 def generate_error_report(

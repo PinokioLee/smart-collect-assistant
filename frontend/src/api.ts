@@ -8,6 +8,8 @@ export interface Health {
   azure_ready: boolean;
   use_rag: boolean;
   use_langfuse: boolean;
+  email_send_mode: string;
+  gmail_ready: boolean;
 }
 
 export async function getHealth(): Promise<Health> {
@@ -46,4 +48,96 @@ export async function collect(input: CollectInput): Promise<CollectResponse> {
 
 export function downloadUrl(path: string): string {
   return path; // 서버가 절대경로(/api/...) 반환
+}
+
+export interface GuideResponse {
+  extracted: {
+    request_title: string | null;
+    purpose: string | null;
+    deadline: string | null;
+    required_fields: string[];
+    cautions: string[];
+    missing_info: string[];
+  };
+  guide: {
+    guide_title: string;
+    guide_body: string;
+    field_instructions: { field: string; how: string }[];
+  };
+  mail_draft: {
+    mail_subject: string;
+    mail_body: string;
+  };
+  llm_used: boolean;
+}
+
+export async function createGuide(subject: string, body: string): Promise<GuideResponse> {
+  const form = new FormData();
+  form.append("subject", subject);
+  form.append("body", body);
+  const { data } = await client.post<GuideResponse>("/guide", form);
+  return data;
+}
+
+export interface SendEmailInput {
+  to: string[];
+  subject: string;
+  body: string;
+  cc?: string[];
+  attachment_paths?: string[];
+}
+
+export interface SendEmailResponse {
+  status: string;
+  mode: string;
+  recipients: string[];
+  subject: string;
+  message_id: string | null;
+  detail: string | null;
+}
+
+export async function sendEmail(input: SendEmailInput): Promise<SendEmailResponse> {
+  const { data } = await client.post<SendEmailResponse>("/send-email", input);
+  return data;
+}
+
+export interface TrackResponse {
+  submitted_list: Array<{ name: string; dept: string; email: string; submitted_at?: string }>;
+  missing_list: Array<{ name: string; dept: string; email: string }>;
+  late_list: Array<{ name: string; dept: string; email: string; submitted_at?: string }>;
+  submission_rate: number;
+  summary: string;
+  reminder?: {
+    reminder_mail_subject: string;
+    reminder_mail_body: string;
+  };
+}
+
+export async function trackSubmissions(submitted: string[], deadline: string): Promise<TrackResponse> {
+  const { data } = await client.post<TrackResponse>("/track", { submitted, deadline });
+  return data;
+}
+
+export interface UpdateFieldsResponse {
+  updated_files: string[];
+  update_count: number;
+  details: Array<{ file: string; updated_cells: number; output: string }>;
+  error_list: Array<{ file: string; reason: string }>;
+  downloads: string[];
+  request_id: string;
+}
+
+export async function updateFields(input: {
+  targetField: string;
+  newValue: string;
+  oldValue?: string;
+  files: File[];
+}): Promise<UpdateFieldsResponse> {
+  const form = new FormData();
+  form.append("target_field", input.targetField);
+  form.append("new_value", input.newValue);
+  form.append("old_value", input.oldValue ?? "");
+  input.files.forEach((f) => form.append("files", f));
+  const { data } = await client.post<UpdateFieldsResponse>("/update-fields", form);
+  return data;
 }

@@ -75,6 +75,10 @@ def health() -> dict:
         "azure_ready": settings.azure_ready,
         "use_rag": settings.use_rag,
         "use_langfuse": settings.langfuse_ready,
+        "email_send_mode": settings.email_send_mode,
+        "gmail_ready": bool(settings.gmail_credentials_file)
+        if settings.email_send_mode == "gmail"
+        else False,
     }
 
 
@@ -126,6 +130,126 @@ async def collect(
         raise HTTPException(status_code=500, detail=f"처리 실패: {exc}") from exc
 
     return _state_to_dict(state)
+
+
+@app.post("/api/update-fields")
+async def update_fields(
+    target_field: str = Form(...),
+    new_value: str = Form(...),
+    old_value: str = Form(""),
+    files: list[UploadFile] = File(...),
+) -> dict:
+    """공통 항목 일괄 수정 (#7)."""
+    from smart_collect.tools.excel_tools import update_common_fields
+
+    ensure_dirs()
+    request_id = "UPD-" + datetime.now().strftime("%Y%m%d-%H%M%S")
+    job_dir = UPLOAD_DIR / request_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = DATA_DIR / "updated_files" / request_id
+    saved: list[str] = []
+    for up in files:
+        dest = job_dir / Path(up.filename).name
+        with dest.open("wb") as f:
+            shutil.copyfileobj(up.file, f)
+        saved.append(str(dest))
+
+    r = update_common_fields(
+        saved, target_field, new_value,
+        old_value=(old_value or None), output_dir=out_dir,
+    )
+    r["downloads"] = [
+        f"/api/download-file/{request_id}/{Path(p).name}" for p in r["updated_files"]
+    ]
+    r["request_id"] = request_id
+    return r
+
+
+@app.post("/api/guide")
+def guide(subject: str = Form(...), body: str = Form(...)) -> dict:
+    """작성 가이드 + 요청 메일 초안 (#2, #3)."""
+    from smart_collect.tools.guide_tools import create_request_mail, generate_writing_guide
+    from smart_collect.tools.requirement_tools import analyze_collection_email
+    from smart_collect.tools.submission_tools import SAMPLE_RECIPIENTS
+
+    req = analyze_collection_email(subject, body, prefer_llm=True)
+    g = generate_writing_guide(req)
+    m = create_request_mail(g["guide_body"], SAMPLE_RECIPIENTS, req.deadline, "취합양식.xlsx")
+    return {
+        "extracted": req.model_dump(),
+        "guide": g,
+        "mail_draft": m,
+        "llm_used": settings.azure_ready,
+    }
+
+
+@app.post("/api/send-email")
+def send_email_endpoint(payload: dict) -> dict:
+    """승인된 메일 초안을 Gmail 또는 mock adapter 로 발송한다.
+
+    payload: {to:[email], subject, body, cc?, attachment_paths?}
+    """
+    from smart_collect.tools.email_tools import EmailSendRequest, send_email
+
+    to = [str(v).strip() for v in payload.get("to", []) if str(v).strip()]
+    if not to:
+        raise HTTPException(status_code=400, detail="수신자 이메일이 필요합니다.")
+    subject = str(payload.get("subject") or "").strip()
+    body = str(payload.get("body") or "").strip()
+    if not subject or not body:
+        raise HTTPException(status_code=400, detail="메일 제목과 본문이 필요합니다.")
+    cc = [str(v).strip() for v in payload.get("cc", []) if str(v).strip()]
+    attachment_paths = [
+        str(v).strip() for v in payload.get("attachment_paths", []) if str(v).strip()
+    ]
+    try:
+        return send_email(
+            EmailSendRequest(
+                to=to,
+                cc=cc,
+                subject=subject,
+                body=body,
+                attachment_paths=attachment_paths,
+            )
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"메일 발송 실패: {exc}") from exc
+
+
+@app.post("/api/track")
+def track(payload: dict) -> dict:
+    """제출 현황 추적 + 미제출자 리마인드 (#5, #6).
+
+    payload: {recipients:[{name,dept,email}], submitted:[식별자], deadline}
+    """
+    from smart_collect.tools.guide_tools import generate_reminder_message
+    from smart_collect.tools.submission_tools import (
+        SAMPLE_RECIPIENTS,
+        track_submission_status,
+    )
+
+    recipients = payload.get("recipients") or SAMPLE_RECIPIENTS
+    submitted = [
+        {"identifier": s, "submitted_at": payload.get("submitted_at", "2026-06-12 14:00")}
+        for s in (payload.get("submitted") or [])
+    ]
+    deadline = payload.get("deadline", "2026-06-12 17:00")
+    st = track_submission_status(recipients, submitted, deadline=deadline)
+    if st["missing_list"]:
+        st["reminder"] = generate_reminder_message(st["missing_list"], deadline)
+    return st
+
+
+@app.get("/api/download-file/{request_id}/{filename}")
+def download_file(request_id: str, filename: str) -> FileResponse:
+    path = DATA_DIR / "updated_files" / request_id / filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="파일 없음")
+    return FileResponse(
+        path,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename=path.name,
+    )
 
 
 @app.get("/api/download/{request_id}/{kind}")

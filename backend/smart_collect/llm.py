@@ -1,7 +1,8 @@
-"""Azure OpenAI 어댑터 (Phase 2).
+"""Azure OpenAI 어댑터 (사내 게이트웨이 SKAX/ai-talentlab 호환).
 
-키가 없거나 라이브러리가 없으면 None 을 반환하여 호출부가 휴리스틱으로
-폴백하도록 한다. 1차 PoC 에서 LLM 은 '메일 분석' 한 곳에만 쓴다.
+사용자 제공 패턴(openai.AzureOpenAI)을 그대로 사용한다. 키가 없거나 호출이
+실패하면 None 을 반환해 호출부가 휴리스틱으로 폴백하도록 한다.
+전체 기능(메일 분석, 가이드 생성 등)이 공유하는 공용 LLM 헬퍼를 제공한다.
 """
 
 from __future__ import annotations
@@ -23,49 +24,62 @@ _SYSTEM_PROMPT = """당신은 회사 내부 취합 요청 메일을 분석하는
 추측하지 말고, 본문에 없으면 missing_info 에 넣으세요. JSON 외 다른 텍스트는 출력하지 마세요."""
 
 
-def _get_client():
-    """langchain-openai 의 AzureChatOpenAI 클라이언트. 준비 안 되면 None."""
+def get_client():
+    """openai.AzureOpenAI 클라이언트. 준비 안 되면 None."""
     if not settings.azure_ready:
         return None
     try:
-        from langchain_openai import AzureChatOpenAI
+        from openai import AzureOpenAI
     except ImportError:
         return None
-    return AzureChatOpenAI(
-        api_key=settings.azure_api_key,
+    return AzureOpenAI(
         azure_endpoint=settings.azure_endpoint,
-        azure_deployment=settings.azure_deployment,
+        api_key=settings.azure_api_key,
         api_version=settings.azure_api_version,
-        temperature=0,
     )
 
 
-def analyze_email_with_llm(
-    subject: str, body: str
-) -> Optional[ExtractedRequirements]:
-    """Azure OpenAI 로 메일을 분석한다. 불가하면 None."""
-    client = _get_client()
+def chat(messages: list[dict], *, temperature: float = 0.0) -> Optional[str]:
+    """공용 채팅 호출. 응답 문자열 또는 None(폴백)."""
+    client = get_client()
     if client is None:
         return None
+    try:
+        resp = client.chat.completions.create(
+            model=settings.azure_deployment,
+            messages=messages,
+            temperature=temperature,
+        )
+        return resp.choices[0].message.content
+    except Exception:  # noqa: BLE001 - 폴백 보장
+        return None
 
-    from langchain_core.messages import HumanMessage, SystemMessage
 
-    messages = [
-        SystemMessage(content=_SYSTEM_PROMPT),
-        HumanMessage(content=f"메일 제목:\n{subject}\n\n메일 본문:\n{body}"),
-    ]
-    response = client.invoke(messages)
-    text = response.content if isinstance(response.content, str) else str(response.content)
-
-    # JSON 블록 추출 (```json ... ``` 또는 순수 JSON)
+def _extract_json(text: str) -> Optional[dict]:
     text = text.strip()
     if text.startswith("```"):
         text = text.strip("`")
-        text = text[text.find("{") :]
+        text = text[text.find("{"):]
     start, end = text.find("{"), text.rfind("}")
     if start == -1 or end == -1:
         return None
-    data = json.loads(text[start : end + 1])
+    try:
+        return json.loads(text[start:end + 1])
+    except json.JSONDecodeError:
+        return None
+
+
+def analyze_email_with_llm(subject: str, body: str) -> Optional[ExtractedRequirements]:
+    """Azure OpenAI 로 메일을 분석한다. 불가하면 None."""
+    content = chat([
+        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "user", "content": f"메일 제목:\n{subject}\n\n메일 본문:\n{body}"},
+    ])
+    if content is None:
+        return None
+    data = _extract_json(content)
+    if data is None:
+        return None
     return ExtractedRequirements(
         request_title=data.get("request_title"),
         purpose=data.get("purpose"),

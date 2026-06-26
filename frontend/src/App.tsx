@@ -1,10 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import {
   collect,
+  createGuide,
   genSamples,
   getHealth,
   getSampleEmail,
+  sendEmail,
+  trackSubmissions,
+  updateFields,
+  type GuideResponse,
   type Health,
+  type SendEmailResponse,
+  type TrackResponse,
+  type UpdateFieldsResponse,
 } from "./api";
 import type { CollectResponse } from "./types";
 
@@ -16,8 +24,22 @@ export default function App() {
   const [useGraph, setUseGraph] = useState(true);
   const [useLlm, setUseLlm] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [guideLoading, setGuideLoading] = useState(false);
+  const [sendLoading, setSendLoading] = useState(false);
+  const [trackLoading, setTrackLoading] = useState(false);
+  const [updateLoading, setUpdateLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<CollectResponse | null>(null);
+  const [guide, setGuide] = useState<GuideResponse | null>(null);
+  const [recipients, setRecipients] = useState("kimys@company.com, jung@company.com, ohsh@company.com");
+  const [sendResult, setSendResult] = useState<SendEmailResponse | null>(null);
+  const [submitted, setSubmitted] = useState("영업팀, 생산팀, 품질팀");
+  const [deadline, setDeadline] = useState("2026-06-12 17:00");
+  const [trackResult, setTrackResult] = useState<TrackResponse | null>(null);
+  const [targetField, setTargetField] = useState("취합월");
+  const [newValue, setNewValue] = useState("2026-06");
+  const [oldValue, setOldValue] = useState("");
+  const [updateResult, setUpdateResult] = useState<UpdateFieldsResponse | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -61,6 +83,86 @@ export default function App() {
     }
   }
 
+  async function buildGuide() {
+    setError(null);
+    if (!subject.trim() || !body.trim()) {
+      setError("메일 제목과 본문을 먼저 입력하세요.");
+      return;
+    }
+    setGuideLoading(true);
+    setGuide(null);
+    setSendResult(null);
+    try {
+      setGuide(await createGuide(subject, body));
+    } catch (e: any) {
+      setError(e?.response?.data?.detail ?? String(e));
+    } finally {
+      setGuideLoading(false);
+    }
+  }
+
+  async function approveAndSend() {
+    setError(null);
+    if (!guide) {
+      setError("먼저 작성 가이드와 메일 초안을 생성하세요.");
+      return;
+    }
+    const to = recipients.split(",").map((v) => v.trim()).filter(Boolean);
+    if (to.length === 0) {
+      setError("수신자 이메일을 1개 이상 입력하세요.");
+      return;
+    }
+    setSendLoading(true);
+    setSendResult(null);
+    try {
+      setSendResult(await sendEmail({
+        to,
+        subject: guide.mail_draft.mail_subject,
+        body: guide.mail_draft.mail_body,
+      }));
+    } catch (e: any) {
+      setError(e?.response?.data?.detail ?? String(e));
+    } finally {
+      setSendLoading(false);
+    }
+  }
+
+  async function runTrack() {
+    setError(null);
+    setTrackLoading(true);
+    setTrackResult(null);
+    try {
+      const submittedList = submitted.split(",").map((v) => v.trim()).filter(Boolean);
+      setTrackResult(await trackSubmissions(submittedList, deadline));
+    } catch (e: any) {
+      setError(e?.response?.data?.detail ?? String(e));
+    } finally {
+      setTrackLoading(false);
+    }
+  }
+
+  async function runUpdateFields() {
+    setError(null);
+    if (files.length === 0) {
+      setError("일괄 수정할 엑셀 파일을 먼저 업로드하세요.");
+      return;
+    }
+    setUpdateLoading(true);
+    setUpdateResult(null);
+    try {
+      setUpdateResult(await updateFields({
+        targetField,
+        newValue,
+        oldValue,
+        files,
+      }));
+    } catch (e: any) {
+      setError(e?.response?.data?.detail ?? String(e));
+    } finally {
+      setUpdateLoading(false);
+    }
+  }
+
   const vr = result?.validation_result;
 
   return (
@@ -73,6 +175,7 @@ export default function App() {
             <span className="badge">Azure {health.azure_ready ? "ON" : "휴리스틱"}</span>
             <span className="badge">RAG {health.use_rag ? "ON" : "OFF"}</span>
             <span className="badge">Langfuse {health.use_langfuse ? "ON" : "OFF"}</span>
+            <span className="badge">Email {health.email_send_mode}{health.gmail_ready ? " ready" : ""}</span>
           </div>
         )}
       </header>
@@ -195,6 +298,81 @@ export default function App() {
           )}
         </section>
       </div>
+
+      <section className="card wide">
+        <h2>4. 작성 가이드 · Gmail 발송 · 제출 추적 · 공통항목 수정</h2>
+        <div className="ops-grid">
+          <div className="ops-panel">
+            <h3>작성 가이드와 요청 메일 초안</h3>
+            <button className="ghost" onClick={buildGuide} disabled={guideLoading}>
+              {guideLoading ? "생성 중…" : "가이드/메일 초안 생성"}
+            </button>
+            {guide && (
+              <div className="block">
+                <p><b>{guide.guide.guide_title}</b></p>
+                <pre>{guide.guide.guide_body}</pre>
+                <label>수신자 이메일</label>
+                <input value={recipients} onChange={(e) => setRecipients(e.target.value)} />
+                <button className="primary inline" onClick={approveAndSend} disabled={sendLoading}>
+                  {sendLoading ? "발송 중…" : "승인 후 이메일 발송"}
+                </button>
+                {sendResult && (
+                  <p className="oktext">
+                    {sendResult.mode} / {sendResult.status} / {sendResult.message_id}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="ops-panel">
+            <h3>제출 현황과 리마인드</h3>
+            <label>제출 식별자</label>
+            <input value={submitted} onChange={(e) => setSubmitted(e.target.value)} />
+            <label>마감일</label>
+            <input value={deadline} onChange={(e) => setDeadline(e.target.value)} />
+            <button className="ghost" onClick={runTrack} disabled={trackLoading}>
+              {trackLoading ? "확인 중…" : "제출 현황 확인"}
+            </button>
+            {trackResult && (
+              <div className="block">
+                <p><b>{trackResult.summary}</b></p>
+                <div className="chips">
+                  {trackResult.missing_list.map((m) => (
+                    <span className="chip warn" key={m.email}>{m.dept} 미제출</span>
+                  ))}
+                </div>
+                {trackResult.reminder && (
+                  <pre>{trackResult.reminder.reminder_mail_subject + "\n" + trackResult.reminder.reminder_mail_body}</pre>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="ops-panel">
+            <h3>공통 항목 일괄 수정</h3>
+            <label>대상 컬럼</label>
+            <input value={targetField} onChange={(e) => setTargetField(e.target.value)} />
+            <label>새 값</label>
+            <input value={newValue} onChange={(e) => setNewValue(e.target.value)} />
+            <label>기존 값 필터</label>
+            <input value={oldValue} onChange={(e) => setOldValue(e.target.value)} placeholder="비우면 전체 적용" />
+            <button className="ghost" onClick={runUpdateFields} disabled={updateLoading}>
+              {updateLoading ? "수정 중…" : "업로드 파일 일괄 수정"}
+            </button>
+            {updateResult && (
+              <div className="block">
+                <p><b>변경 셀 {updateResult.update_count}개</b></p>
+                <div className="downloads">
+                  {updateResult.downloads.map((href) => (
+                    <a className="ghost" href={href} key={href}>수정 파일</a>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

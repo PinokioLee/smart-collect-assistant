@@ -19,12 +19,37 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+# Windows 기본 콘솔(CP949)에서도 시연 로그 출력이 중단되지 않도록 한다.
+try:
+    sys.stdout.reconfigure(errors="replace")
+    sys.stderr.reconfigure(errors="replace")
+except AttributeError:
+    pass
+
 # backend 패키지 import 경로 보장
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from smart_collect.config import SAMPLE_DIR, settings  # noqa: E402
 from smart_collect.pipeline import run_collection  # noqa: E402
 from smart_collect.sample_data import MOCK_EMAIL, generate_samples  # noqa: E402
+
+_CONSOLE_TRANSLATION = str.maketrans(
+    {
+        "—": "-",
+        "–": "-",
+        "→": "->",
+        "←": "<-",
+        "↓": " down",
+        "↑": " up",
+        "×": "x",
+        "·": "-",
+    }
+)
+
+
+def _safe_text(text: str) -> str:
+    """시연 콘솔에서 깨지기 쉬운 기호를 ASCII 중심으로 치환한다."""
+    return text.translate(_CONSOLE_TRANSLATION)
 
 
 def _new_request_id() -> str:
@@ -64,20 +89,20 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     prefer_llm = not args.no_llm
     if prefer_llm and not settings.azure_ready:
-        print("ℹ️  Azure 키 미설정 → 메일 분석은 휴리스틱으로 동작합니다.\n")
+        print("[INFO] Azure 키 미설정 -> 메일 분석은 휴리스틱으로 동작합니다.\n")
 
     request_id = _new_request_id()
     if args.graph:
         from smart_collect.graph import run_collection_graph
 
-        print("⚙️  LangGraph Multi-Agent 워크플로우로 실행합니다.\n")
+        print("[RUN] LangGraph Multi-Agent 워크플로우로 실행합니다.\n")
         state = run_collection_graph(request_id, subject, body, excel_files)
     else:
         state = run_collection(
             request_id, subject, body, excel_files, prefer_llm=prefer_llm
         )
 
-    print("\n" + (state.result_summary or "(요약 없음)"))
+    print("\n" + _safe_text(state.result_summary or "(요약 없음)"))
 
     if args.json:
         out = {
@@ -112,27 +137,93 @@ def cmd_demo(_args: argparse.Namespace) -> int:
         str(SAMPLE_DIR / "개선요청_품질팀.xlsx"),
     ]
 
-    print("\n" + "█" * 60)
+    print("\n" + "=" * 60)
     print("  [시나리오] 2026년 6월 시스템 개선요청 취합 메일 + 부서 엑셀 3개")
-    print("  → 메일 분석 → ToT 규칙선택 → 검증 → Self-Correction → 병합/보고")
-    print("█" * 60)
+    print("  -> 메일 분석 -> ToT 규칙선택 -> 검증 -> Self-Correction -> 병합/보고")
+    print("=" * 60)
 
     state = run_collection_graph(
         _new_request_id(), MOCK_EMAIL["subject"], MOCK_EMAIL["body"], excels
     )
 
-    print("\n────────── 고수준 추론 로그 (Agent Reasoning) ──────────")
+    print("\n---------- 고수준 추론 로그 (Agent Reasoning) ----------")
     for line in state.reasoning_log:
-        print("  " + line)
+        print("  " + _safe_text(line))
 
-    print("\n" + (state.result_summary or ""))
+    print("\n" + _safe_text(state.result_summary or ""))
 
-    print("\n\n" + "█" * 60)
+    print("\n\n" + "=" * 60)
     print("  [정량 검증] 라벨링 데이터셋 실측 벤치마크")
-    print("█" * 60)
+    print("=" * 60)
     from smart_collect.benchmark import _print_table, run_benchmark
 
     _print_table(run_benchmark())
+    return 0
+
+
+def _sample_excels() -> list[str]:
+    if not (SAMPLE_DIR / "개선요청_영업팀.xlsx").exists():
+        generate_samples()
+    return [
+        str(SAMPLE_DIR / "개선요청_영업팀.xlsx"),
+        str(SAMPLE_DIR / "개선요청_생산팀.xlsx"),
+        str(SAMPLE_DIR / "개선요청_품질팀.xlsx"),
+    ]
+
+
+def cmd_update_fields(args: argparse.Namespace) -> int:
+    """공통 항목 일괄 수정 (#7)."""
+    from smart_collect.tools.excel_tools import update_common_fields
+
+    excels = args.excel or _sample_excels()
+    r = update_common_fields(excels, args.field, args.new, old_value=args.old)
+    print(f"공통항목 일괄수정: '{args.field}' -> '{args.new}'"
+          + (f" (기존 '{args.old}'만)" if args.old else " (전체)"))
+    print(f"  변경 셀: {r['update_count']}개 / 파일 {len(r['updated_files'])}개")
+    for d in r["details"]:
+        print(f"   - {d['file']}: {d['updated_cells']}셀 -> {d['output']}")
+    return 0
+
+
+def cmd_guide(args: argparse.Namespace) -> int:
+    """작성 가이드 + 요청 메일 초안 생성 (#2, #3)."""
+    from smart_collect.tools.guide_tools import create_request_mail, generate_writing_guide
+    from smart_collect.tools.requirement_tools import analyze_collection_email
+    from smart_collect.tools.submission_tools import SAMPLE_RECIPIENTS
+
+    req = analyze_collection_email(MOCK_EMAIL["subject"], MOCK_EMAIL["body"], prefer_llm=not args.no_llm)
+    g = generate_writing_guide(req)
+    print("=== 작성 가이드 ===")
+    print("제목:", g["guide_title"])
+    print(g["guide_body"])
+    m = create_request_mail(g["guide_body"], SAMPLE_RECIPIENTS, req.deadline, "취합양식.xlsx")
+    print("\n=== 요청 메일 초안 (발송 전 승인 필요) ===")
+    print("제목:", m["mail_subject"])
+    print(m["mail_body"])
+    return 0
+
+
+def cmd_track(args: argparse.Namespace) -> int:
+    """제출 현황 추적 + 미제출자 리마인드 (#5, #6)."""
+    from smart_collect.tools.guide_tools import generate_reminder_message
+    from smart_collect.tools.submission_tools import (
+        SAMPLE_RECIPIENTS,
+        submissions_from_files,
+        track_submission_status,
+    )
+
+    # 데모: 물류팀은 미제출 상태 (샘플 3개만 제출)
+    subs = submissions_from_files(_sample_excels(), submitted_at="2026-06-12 14:00")
+    st = track_submission_status(SAMPLE_RECIPIENTS, subs, deadline=args.deadline)
+    print("=== 제출 현황 ===")
+    print(st["summary"])
+    for m in st["missing_list"]:
+        print(f"   - 미제출: {m['name']} / {m['dept']} / {m['email']}")
+    if st["missing_list"]:
+        rem = generate_reminder_message(st["missing_list"], args.deadline)
+        print("\n=== 미제출자 리마인드 초안 (발송 전 승인 필요) ===")
+        print("제목:", rem["reminder_mail_subject"])
+        print(rem["reminder_mail_body"])
     return 0
 
 
@@ -142,6 +233,21 @@ def main() -> int:
 
     p_demo = sub.add_parser("demo", help="시연 영상용 종합 데모")
     p_demo.set_defaults(func=cmd_demo)
+
+    p_uf = sub.add_parser("update-fields", help="공통 항목 일괄 수정")
+    p_uf.add_argument("--field", required=True, help="대상 컬럼명")
+    p_uf.add_argument("--new", required=True, help="새 값")
+    p_uf.add_argument("--old", help="이 값과 일치하는 셀만 (생략 시 전체)")
+    p_uf.add_argument("--excel", nargs="+", help="대상 엑셀들 (생략 시 샘플)")
+    p_uf.set_defaults(func=cmd_update_fields)
+
+    p_g = sub.add_parser("guide", help="작성 가이드 + 요청 메일 초안")
+    p_g.add_argument("--no-llm", action="store_true")
+    p_g.set_defaults(func=cmd_guide)
+
+    p_t = sub.add_parser("track", help="제출 현황 추적 + 리마인드")
+    p_t.add_argument("--deadline", default="2026-06-12 17:00")
+    p_t.set_defaults(func=cmd_track)
 
     p_gen = sub.add_parser("gen-samples", help="샘플 메일/엑셀 생성")
     p_gen.set_defaults(func=cmd_gen_samples)

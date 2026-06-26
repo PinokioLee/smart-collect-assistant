@@ -49,6 +49,15 @@ class Settings:
     use_langfuse: bool = _as_bool(os.getenv("USE_LANGFUSE"), default=False)
     use_rag: bool = _as_bool(os.getenv("USE_RAG"), default=False)
 
+    # Email sending
+    # mock: 실제 발송 없이 발송 이력만 반환 / gmail: Gmail API OAuth 로 실제 발송
+    email_send_mode: str = os.getenv("EMAIL_SEND_MODE", "mock").strip().lower()
+    gmail_credentials_file: str = os.getenv("GMAIL_CREDENTIALS_FILE", "")
+    gmail_token_file: str = os.getenv(
+        "GMAIL_TOKEN_FILE", str(DATA_DIR / "gmail_token.json")
+    )
+    gmail_sender: str = os.getenv("GMAIL_SENDER", "")
+
     @property
     def azure_ready(self) -> bool:
         """실제 Azure OpenAI 호출 가능 여부."""

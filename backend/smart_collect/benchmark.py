@@ -247,7 +247,7 @@ def _print_table(m: dict) -> None:
     sc = m["self_correction"]
     tot = m["tot_discrimination"]
     print("\n" + "=" * 60)
-    print("  Smart Collect — 실측 벤치마크 (KPI)")
+    print("  Smart Collect - 실측 벤치마크 (KPI)")
     print("=" * 60)
     print(f"  데이터셋: {m['dataset']['files']}파일 / 정답오류 {m['dataset']['ground_truth_errors']}건")
     print(f"\n  [1] 검출 정확도  Precision={d['precision']*100:.1f}%  "
@@ -257,10 +257,10 @@ def _print_table(m: dict) -> None:
           f"(처리 {rep['time_mean_ms']:.2f}ms)")
     print(f"  [3] 처리 속도    {sp['total_rows']}행 자동 {sp['auto_seconds']}초 "
           f"({sp['throughput_rows_per_sec']:,.0f}행/초)  vs 수동추정 {sp['manual_estimate_min']}분  "
-          f"→ {sp['speedup_x']:,.0f}배 ({sp['reduction_pct']:.1f}%↓)")
+          f"-> {sp['speedup_x']:,.0f}배 ({sp['reduction_pct']:.1f}% down)")
     print(f"  [4] 자동 교정    교정율 {sc['auto_fix_rate_pct']:.0f}%  "
-          f"오류행 복구 {sc['error_rows_recovered']}건 (재작업 {sc['rework_reduction_pct']:.0f}%↓)")
-    print(f"  [5] ToT 변별     {tot['selected']} 선택 → 과잉규칙 오탐 "
+          f"오류행 복구 {sc['error_rows_recovered']}건 (재작업 {sc['rework_reduction_pct']:.0f}% down)")
+    print(f"  [5] ToT 변별     {tot['selected']} 선택 -> 과잉규칙 오탐 "
           f"{tot['false_positives_avoided']}건 회피 {tot['strict_false_positive_cols']}")
     print("=" * 60)
 

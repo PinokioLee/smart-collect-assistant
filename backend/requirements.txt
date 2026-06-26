@@ -21,6 +21,11 @@ python-multipart==0.0.32
 pytest==9.1.1
 httpx==0.28.1
 
+# Gmail API 실제 발송 (EMAIL_SEND_MODE=gmail)
+google-api-python-client>=2.0.0
+google-auth-oauthlib>=1.0.0
+google-auth-httplib2>=0.2.0
+
 # 선택: Langfuse 추적 (USE_LANGFUSE=true 일 때)
 # langfuse
 

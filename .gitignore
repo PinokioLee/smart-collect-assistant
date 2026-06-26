@@ -12,6 +12,7 @@ __pycache__/
 # Data: ignore generated outputs & uploads & samples (regenerable)
 data/merged_files/*
 data/error_reports/*
+data/updated_files/*
 data/uploads/
 data/samples/
 !data/merged_files/.gitkeep
