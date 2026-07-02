@@ -5,6 +5,9 @@ import {
   genSamples,
   getHealth,
   getSampleEmail,
+  getStyleMails,
+  saveStyleMail,
+  uploadStyleMails,
   sendEmail,
   trackSubmissions,
   updateFields,
@@ -21,8 +24,6 @@ export default function App() {
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [files, setFiles] = useState<File[]>([]);
-  const [useGraph, setUseGraph] = useState(true);
-  const [useLlm, setUseLlm] = useState(true);
   const [loading, setLoading] = useState(false);
   const [guideLoading, setGuideLoading] = useState(false);
   const [sendLoading, setSendLoading] = useState(false);
@@ -40,10 +41,13 @@ export default function App() {
   const [newValue, setNewValue] = useState("2026-06");
   const [oldValue, setOldValue] = useState("");
   const [updateResult, setUpdateResult] = useState<UpdateFieldsResponse | null>(null);
+  const [styleCount, setStyleCount] = useState(0);
+  const [styleInput, setStyleInput] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     getHealth().then(setHealth).catch(() => setHealth(null));
+    getStyleMails().then((s) => setStyleCount(s.count)).catch(() => setStyleCount(0));
   }, []);
 
   async function loadSampleEmail() {
@@ -74,7 +78,7 @@ export default function App() {
     setLoading(true);
     setResult(null);
     try {
-      const res = await collect({ subject, body, useGraph, useLlm, files });
+      const res = await collect({ subject, body, useGraph: true, useLlm: true, files });
       setResult(res);
     } catch (e: any) {
       setError(e?.response?.data?.detail ?? String(e));
@@ -185,9 +189,13 @@ export default function App() {
         <section className="card">
           <h2>1. 취합 요청 메일</h2>
           <div className="row">
-            <button className="ghost" onClick={loadSampleEmail}>샘플 메일 불러오기</button>
+            <button className="ghost" onClick={loadSampleEmail}>내장 샘플 메일 불러오기</button>
             <button className="ghost" onClick={makeSamples}>샘플 엑셀 생성</button>
           </div>
+          <p className="muted">
+            ※ '내장 샘플'은 앱에 포함된 예시입니다. 실제 Gmail 메일은 Claude Code가
+            Gmail MCP로 필요할 때 가져와 아래 제목/본문에 붙여넣습니다.
+          </p>
           <label>메일 제목</label>
           <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="예: 2026년 6월 시스템 개선 요청사항 취합" />
           <label>메일 본문</label>
@@ -202,16 +210,6 @@ export default function App() {
               ))}
             </ul>
           )}
-
-          <h2>3. 실행 옵션</h2>
-          <label className="check">
-            <input type="checkbox" checked={useGraph} onChange={(e) => setUseGraph(e.target.checked)} />
-            LangGraph 멀티에이전트 워크플로우 사용
-          </label>
-          <label className="check">
-            <input type="checkbox" checked={useLlm} onChange={(e) => setUseLlm(e.target.checked)} />
-            메일 분석에 LLM 사용 (키 없으면 자동 휴리스틱)
-          </label>
 
           <button className="primary" onClick={run} disabled={loading}>
             {loading ? "처리 중…" : "검증 · 병합 실행"}
@@ -304,12 +302,52 @@ export default function App() {
         <div className="ops-grid">
           <div className="ops-panel">
             <h3>작성 가이드와 요청 메일 초안</h3>
+            <div className="block">
+              <p className="muted">내 과거 발송 스타일 샘플: <b>{styleCount}</b>개</p>
+              <label>내가 작성한 메일 파일 업로드 (.txt / .md / .eml)</label>
+              <input
+                type="file"
+                accept=".txt,.md,.eml"
+                multiple
+                onChange={async (e) => {
+                  const picked = Array.from(e.target.files ?? []);
+                  if (picked.length === 0) return;
+                  const r = await uploadStyleMails(picked);
+                  setStyleCount(r.count);
+                  e.target.value = "";
+                  alert(`스타일 샘플 ${r.saved.length}개 업로드됨 (총 ${r.count}개). '가이드/메일 초안 생성'을 누르면 반영됩니다.`);
+                }}
+              />
+              <label>또는 메일 본문 직접 붙여넣기</label>
+              <textarea
+                value={styleInput}
+                onChange={(e) => setStyleInput(e.target.value)}
+                rows={3}
+                placeholder="과거에 보냈던 요청 메일 본문을 붙여넣고 저장하면 초안 톤에 반영됩니다."
+              />
+              <button
+                className="ghost inline"
+                onClick={async () => {
+                  if (!styleInput.trim()) return;
+                  const r = await saveStyleMail("", styleInput.trim());
+                  setStyleCount(r.count);
+                  setStyleInput("");
+                }}
+              >
+                붙여넣은 본문 저장
+              </button>
+            </div>
             <button className="ghost" onClick={buildGuide} disabled={guideLoading}>
               {guideLoading ? "생성 중…" : "가이드/메일 초안 생성"}
             </button>
             {guide && (
               <div className="block">
                 <p><b>{guide.guide.guide_title}</b></p>
+                {guide.style_used ? (
+                  <span className="chip">내 과거 발송 스타일 반영됨 ({guide.style_sources.join(", ")})</span>
+                ) : (
+                  <span className="chip warn">스타일 샘플 없음 · 기본 톤</span>
+                )}
                 <pre>{guide.guide.guide_body}</pre>
                 <label>수신자 이메일</label>
                 <input value={recipients} onChange={(e) => setRecipients(e.target.value)} />
@@ -327,6 +365,10 @@ export default function App() {
 
           <div className="ops-panel">
             <h3>제출 현황과 리마인드</h3>
+            <p className="muted">
+              현재는 파일 식별자 기반 mock 추적입니다. 실제 회신 메일 확인은
+              Claude Code의 Gmail MCP로 수행할 수 있습니다(후속 확장).
+            </p>
             <label>제출 식별자</label>
             <input value={submitted} onChange={(e) => setSubmitted(e.target.value)} />
             <label>마감일</label>

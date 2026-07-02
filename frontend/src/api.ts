@@ -69,6 +69,8 @@ export interface GuideResponse {
     mail_body: string;
   };
   llm_used: boolean;
+  style_used: boolean;
+  style_sources: string[];
 }
 
 export async function createGuide(subject: string, body: string): Promise<GuideResponse> {
@@ -76,6 +78,28 @@ export async function createGuide(subject: string, body: string): Promise<GuideR
   form.append("subject", subject);
   form.append("body", body);
   const { data } = await client.post<GuideResponse>("/guide", form);
+  return data;
+}
+
+export interface StyleMailsResponse {
+  count: number;
+  files: string[];
+}
+
+export async function getStyleMails(): Promise<StyleMailsResponse> {
+  const { data } = await client.get<StyleMailsResponse>("/style-mails");
+  return data;
+}
+
+export async function saveStyleMail(subject: string, body: string): Promise<{ saved: string; count: number }> {
+  const { data } = await client.post("/save-style-mail", { subject, body });
+  return data;
+}
+
+export async function uploadStyleMails(files: File[]): Promise<{ saved: string[]; count: number }> {
+  const form = new FormData();
+  files.forEach((f) => form.append("files", f));
+  const { data } = await client.post("/upload-style-mails", form);
   return data;
 }
 
