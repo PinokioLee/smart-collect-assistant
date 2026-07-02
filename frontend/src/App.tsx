@@ -436,7 +436,7 @@ export default function App() {
               <div className="result">
                 <p className="field-line"><b>변경 셀 {updateResult.update_count}개</b></p>
                 <div className="downloads">
-                  {updateResult.downloads.map((href) => (<a className="ghost" href={href} key={href}>수정 파일 다운로드</a>))}
+                  {updateResult.downloads.map((href, i) => (<a className="primary" href={href} key={href}>⬇ 수정 파일 {updateResult.downloads.length > 1 ? i + 1 : ""}</a>))}
                 </div>
               </div>
             )}
