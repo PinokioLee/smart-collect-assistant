@@ -125,6 +125,25 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailRespons
   return data;
 }
 
+export interface SendRequestMailResponse extends SendEmailResponse {
+  attachments: string[];
+}
+
+export async function sendRequestMail(input: {
+  to: string;
+  subject: string;
+  body: string;
+  files: File[];
+}): Promise<SendRequestMailResponse> {
+  const form = new FormData();
+  form.append("to", input.to);
+  form.append("subject", input.subject);
+  form.append("body", input.body);
+  input.files.forEach((f) => form.append("files", f));
+  const { data } = await client.post<SendRequestMailResponse>("/send-request-mail", form);
+  return data;
+}
+
 export interface TrackResponse {
   submitted_list: Array<{ name: string; dept: string; email: string; submitted_at?: string }>;
   missing_list: Array<{ name: string; dept: string; email: string }>;
