@@ -167,7 +167,7 @@ trace_with_langfuse
 
 * 엑셀 검증과 병합은 LLM 판단에 맡기지 않고 pandas와 openpyxl 기반 규칙 로직으로 처리한다.
 
-* 실행 추적은 Console/File Log와 `agent_handoff_history`, `reasoning_log`로 확인한다. Langfuse 정식 Trace는 환경 변수와 운영 설정이 준비된 뒤 확장할 수 있다.
+* 실행 추적은 Console/File Log와 `agent_handoff_history`, `reasoning_log`로 확인한다. 이후 Langfuse(v2)를 실제 연동하여 `USE_LANGFUSE=true`일 때 전 노드 실행이 Langfuse 대시보드로 전송된다.
 
 * **주요 기술:** Email Adapter Pattern, Mock Adapter, Gmail API 발송 Adapter, Python, FastAPI, Pydantic, pandas, openpyxl, Custom Tool Definition, Human-in-the-loop Approval
 
@@ -226,7 +226,7 @@ docs/reference/
 | **엑셀 검증 정확도**             | 엑셀 데이터 검증은 동일한 입력에 대해 항상 동일한 결과가 나와야 한다. 필수값 누락, 날짜 형식 오류, 중복 데이터 같은 항목은 자연어 판단보다 명확한 규칙 기반 검증이 적합하다.                                                                         | **리서치:** pandas와 openpyxl 기반 엑셀 데이터 처리 방식을 검토하였다. **적용:** Excel Validation Agent는 LLM이 아니라 규칙 기반 로직으로 검증을 수행한다. 필수값 누락, 날짜 형식 오류, 코드값 오류, 중복 데이터를 각각 함수로 분리하고, 검증 결과는 오류 보고서로 생성한다. 원본 파일은 수정하지 않고 결과 파일만 별도로 저장한다.                                                                                                                  |
 | **Agent 상태 관리**           | 취합 업무는 이전 단계의 결과가 다음 단계의 입력으로 사용된다. 예를 들어 메일 분석 결과는 작성 가이드 생성에 사용되고, 승인 상태는 메일 발송 여부를 결정하며, 검증 결과는 보고서 생성에 사용된다.                                                              | **리서치:** LangGraph의 State 기반 Workflow 설계를 검토하였다. **적용:** `AgentState`에 `request_id`, `gmail_message_id`, `extracted_requirements`, `reference_documents`, `approval_status`, `submission_status`, `validation_result`, `current_agent`, `langfuse_trace_id`를 저장하도록 설계하였다. Supervisor Agent는 이 상태값을 기준으로 다음 Agent를 선택한다.              |
 | **출력 데이터 구조화**            | 메일 분석 결과나 엑셀 검증 결과가 자유 텍스트로만 반환되면 프론트엔드 표시, 후속 Agent 입력, 보고서 생성에 재사용하기 어렵다.                                                                                                   | **리서치:** Pydantic 모델과 JSON Output Parsing 방식을 검토하였다. **적용:** 메일 분석 결과, RAG 검색 결과, 제출 현황, 엑셀 검증 결과를 JSON 구조로 반환하도록 설계하였다. 예를 들어 `required_fields`, `deadline`, `missing_info`, `error_rows`, `duplicate_rows`, `submission_rate` 같은 필드를 고정하여 후속 단계에서 재사용할 수 있게 하였다.                                                                   |
-| **모니터링 및 디버깅**            | 멀티 에이전트 구조에서는 Supervisor Agent가 어떤 기준으로 다음 Agent를 선택했는지, 각 Agent가 어떤 입력과 출력으로 실행되었는지 확인할 수 있어야 한다. | **리서치:** Langfuse 기반 LLM Observability와 Trace 관리 방식을 검토하였다. **적용:** 현재 PoC는 Console/File Log, `agent_handoff_history`, `reasoning_log`로 실행 흐름을 확인한다. Langfuse 정식 Trace는 환경 변수와 운영 계정이 준비된 후 확장 가능하도록 설정 구조만 분리하였다.                                   |
+| **모니터링 및 디버깅**            | 멀티 에이전트 구조에서는 Supervisor Agent가 어떤 기준으로 다음 Agent를 선택했는지, 각 Agent가 어떤 입력과 출력으로 실행되었는지 확인할 수 있어야 한다. | **리서치:** Langfuse 기반 LLM Observability와 Trace 관리 방식을 검토하였다. **적용:** Console/File Log, `agent_handoff_history`, `reasoning_log`로 실행 흐름을 확인하고, 추가로 Langfuse(v2)를 실제 연동하여 `USE_LANGFUSE=true`일 때 전 노드의 `trace_execution`이 실행 순서·입출력 요약을 Langfuse 대시보드로 전송한다. (코드가 v2 API를 사용하므로 `langfuse<3`으로 고정)                                   |
 | **보안 및 민감정보 처리**          | 메일 본문, 첨부파일, 작성자 이메일, 엑셀 데이터에는 업무상 민감 정보가 포함될 수 있다. 전체 원문을 로그에 그대로 남기면 보안상 문제가 된다.                                                                                     | **리서치:** 로그 최소화와 민감정보 마스킹 기준을 검토하였다. **적용:** 현재 PoC의 Console/File Log에는 원문 전체가 아니라 request_id, 실행 단계, 오류 수, 요약 정보 중심으로 기록한다. 이메일 주소, 이름, 첨부파일 원문 데이터는 필요한 범위에서만 사용하고 운영 Trace 연동은 후속 확장 시 마스킹 정책과 함께 적용한다.                                                                                                                              |
 
 ***
@@ -309,3 +309,31 @@ docs/reference/
 - 실행 Agent: Supervisor Agent, Requirement Analysis Agent, Excel Validation Agent, Self-Correction Agent, Report Agent
 - 실행 로그: request_id, agent_handoff_history, reasoning_log
 ```
+
+***
+
+### 1.4 추가 구현 (2차): 내 발송 스타일 RAG 및 메일 발송 확장
+
+최초 PoC 이후, Guide Draft Agent와 메일 발송 흐름을 실제 취합 담당자 관점으로 확장하였다.
+
+* **스타일 RAG (Guide Draft Agent 강화)**
+
+  * 담당자가 과거에 보낸 요청 메일을 업로드(.txt/.md/.eml)하거나 붙여넣어 저장하면 `docs/reference/style_samples/`에 스타일 코퍼스로 축적된다.
+  * 요청 메일 초안 생성 시 `retrieve_style_samples()`가 관련 과거 메일을 검색하여 `create_request_mail()` 프롬프트에 인사말·톤·구성 예시로 주입한다.
+  * 모델 재학습이 아니라 검색 주입(RAG) 방식이다. 반환값에 `style_used`, `style_sources`를 포함해 반영 여부를 UI에 표시한다.
+
+* **메일 발송 확장 (첨부 + 리마인드)**
+
+  * `POST /api/send-request-mail`로 요청/리마인드 메일을 발송하며, 요청과 함께 받은 양식 엑셀을 첨부(multipart)해 다중 수신자에게 보낸다. 기본 mock, `EMAIL_SEND_MODE=gmail` 시 실제 발송.
+  * 제출 현황 확인 결과의 미제출자 이메일이 리마인드 발송 폼에 자동 입력된다.
+
+* **신규 Tool / 엔드포인트**
+
+```text
+save_style_mail        과거 발송 메일 저장(POST /api/save-style-mail)
+upload_style_mails     메일 파일 업로드(POST /api/upload-style-mails)
+retrieve_style_samples 스타일 코퍼스 검색(Guide Draft Agent 내부)
+send_request_mail      요청/리마인드 발송, 첨부 지원(POST /api/send-request-mail)
+```
+
+* **Gmail 읽기 방식**: 앱이 직접 수신함을 읽지 않고, Claude Code의 Gmail MCP로 필요할 때만 팀장 포워딩 메일·과거 발송 메일을 가져와 워크플로우에 투입한다(Human-in-the-loop). 앱 백엔드의 수신함 자동 검색은 후속 확장이다.
