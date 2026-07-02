@@ -34,6 +34,8 @@ export default function App() {
   const [guide, setGuide] = useState<GuideResponse | null>(null);
   const [recipients, setRecipients] = useState("kimys@company.com, jung@company.com, ohsh@company.com");
   const [sendResult, setSendResult] = useState<SendEmailResponse | null>(null);
+  const [draftSubject, setDraftSubject] = useState("");
+  const [draftBody, setDraftBody] = useState("");
   const [submitted, setSubmitted] = useState("영업팀, 생산팀, 품질팀");
   const [deadline, setDeadline] = useState("2026-06-12 17:00");
   const [trackResult, setTrackResult] = useState<TrackResponse | null>(null);
@@ -97,7 +99,10 @@ export default function App() {
     setGuide(null);
     setSendResult(null);
     try {
-      setGuide(await createGuide(subject, body));
+      const g = await createGuide(subject, body);
+      setGuide(g);
+      setDraftSubject(g.mail_draft.mail_subject);
+      setDraftBody(g.mail_draft.mail_body);
     } catch (e: any) {
       setError(e?.response?.data?.detail ?? String(e));
     } finally {
@@ -116,13 +121,17 @@ export default function App() {
       setError("수신자 이메일을 1개 이상 입력하세요.");
       return;
     }
+    if (!draftSubject.trim() || !draftBody.trim()) {
+      setError("메일 제목과 본문을 확인하세요.");
+      return;
+    }
     setSendLoading(true);
     setSendResult(null);
     try {
       setSendResult(await sendEmail({
         to,
-        subject: guide.mail_draft.mail_subject,
-        body: guide.mail_draft.mail_body,
+        subject: draftSubject,
+        body: draftBody,
       }));
     } catch (e: any) {
       setError(e?.response?.data?.detail ?? String(e));
@@ -349,14 +358,25 @@ export default function App() {
                   <span className="chip warn">스타일 샘플 없음 · 기본 톤</span>
                 )}
                 <pre>{guide.guide.guide_body}</pre>
-                <label>수신자 이메일</label>
-                <input value={recipients} onChange={(e) => setRecipients(e.target.value)} />
+
+                <h4>보낼 요청 메일 초안 (수정 가능)</h4>
+                <label>메일 제목</label>
+                <input value={draftSubject} onChange={(e) => setDraftSubject(e.target.value)} />
+                <label>메일 본문</label>
+                <textarea value={draftBody} onChange={(e) => setDraftBody(e.target.value)} rows={8} />
+                <label>수신자 이메일 (쉼표로 여러 명 입력)</label>
+                <input
+                  value={recipients}
+                  onChange={(e) => setRecipients(e.target.value)}
+                  placeholder="hong@company.com, kim@company.com, lee@company.com"
+                />
                 <button className="primary inline" onClick={approveAndSend} disabled={sendLoading}>
                   {sendLoading ? "발송 중…" : "승인 후 이메일 발송"}
                 </button>
                 {sendResult && (
                   <p className="oktext">
                     {sendResult.mode} / {sendResult.status} / {sendResult.message_id}
+                    {sendResult.mode === "mock" && " (현재 mock 발송 — 실제 발송은 EMAIL_SEND_MODE=gmail 설정 필요)"}
                   </p>
                 )}
               </div>
