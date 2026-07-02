@@ -47,6 +47,12 @@ export default function App() {
   const [deadline, setDeadline] = useState("2026-06-12 17:00");
   const [trackLoading, setTrackLoading] = useState(false);
   const [trackResult, setTrackResult] = useState<TrackResponse | null>(null);
+  const [reminderSubject, setReminderSubject] = useState("");
+  const [reminderBody, setReminderBody] = useState("");
+  const [reminderRecipients, setReminderRecipients] = useState("");
+  const [reminderAttach, setReminderAttach] = useState<File[]>([]);
+  const [reminderSendLoading, setReminderSendLoading] = useState(false);
+  const [reminderSendResult, setReminderSendResult] = useState<SendRequestMailResponse | null>(null);
 
   // 4. 공통 항목 일괄 수정
   const [updateFilesList, setUpdateFilesList] = useState<File[]>([]);
@@ -157,13 +163,42 @@ export default function App() {
     setError(null);
     setTrackLoading(true);
     setTrackResult(null);
+    setReminderSendResult(null);
     try {
       const submittedList = submitted.split(",").map((v) => v.trim()).filter(Boolean);
-      setTrackResult(await trackSubmissions(submittedList, deadline));
+      const t = await trackSubmissions(submittedList, deadline);
+      setTrackResult(t);
+      if (t.reminder) {
+        setReminderSubject(t.reminder.reminder_mail_subject);
+        setReminderBody(t.reminder.reminder_mail_body);
+      }
+      setReminderRecipients(t.missing_list.map((m) => m.email).filter(Boolean).join(", "));
     } catch (e: any) {
       setError(e?.response?.data?.detail ?? String(e));
     } finally {
       setTrackLoading(false);
+    }
+  }
+
+  async function sendReminder() {
+    setError(null);
+    if (!reminderSubject.trim() || !reminderBody.trim()) {
+      setError("리마인드 메일 제목과 본문을 입력하세요. (현황 확인 또는 직접 작성)");
+      return;
+    }
+    const to = reminderRecipients.split(",").map((v) => v.trim()).filter(Boolean);
+    if (to.length === 0) {
+      setError("리마인드 수신자 이메일을 1개 이상 입력하세요.");
+      return;
+    }
+    setReminderSendLoading(true);
+    setReminderSendResult(null);
+    try {
+      setReminderSendResult(await sendRequestMail({ to: reminderRecipients, subject: reminderSubject, body: reminderBody, files: reminderAttach }));
+    } catch (e: any) {
+      setError(e?.response?.data?.detail ?? String(e));
+    } finally {
+      setReminderSendLoading(false);
     }
   }
 
@@ -370,12 +405,24 @@ export default function App() {
                 )}
               </div>
               <div className="col">
-                <div className="outbox">
-                  <p className="outbox-title">리마인드 메일 초안</p>
-                  {trackResult?.reminder ? (
-                    <pre>{trackResult.reminder.reminder_mail_subject + "\n\n" + trackResult.reminder.reminder_mail_body}</pre>
-                  ) : (
-                    <div className="placeholder">‘제출 현황 확인’을 누르면 미제출자에게 보낼<br />리마인드 메일 초안이 여기 표시됩니다.</div>
+                <div className="dispatch">
+                  <h4>보낼 리마인드 메일 — 수정·직접 작성 가능</h4>
+                  <label>메일 제목</label>
+                  <input value={reminderSubject} onChange={(e) => setReminderSubject(e.target.value)} placeholder="현황 확인 시 자동 입력 / 직접 작성 가능" />
+                  <label>메일 본문</label>
+                  <textarea value={reminderBody} onChange={(e) => setReminderBody(e.target.value)} rows={8} placeholder="현황 확인 시 자동 입력 / 직접 작성 가능" />
+                  <label>첨부 파일 (선택)</label>
+                  <input type="file" multiple onChange={(e) => setReminderAttach(Array.from(e.target.files ?? []))} />
+                  {reminderAttach.length > 0 && (<ul className="filelist">{reminderAttach.map((f) => (<li key={f.name}>📎 {f.name}</li>))}</ul>)}
+                  <label>수신자 이메일 (쉼표로 여러 명 · 미제출자 자동 입력)</label>
+                  <input value={reminderRecipients} onChange={(e) => setReminderRecipients(e.target.value)} placeholder="미제출자 이메일이 자동 입력됩니다" />
+                  <button className="primary inline" onClick={sendReminder} disabled={reminderSendLoading}>{reminderSendLoading ? "발송 중…" : "리마인드 메일 보내기"}</button>
+                  {reminderSendResult && (
+                    <p className="oktext">
+                      {reminderSendResult.mode} · {reminderSendResult.status} · {reminderSendResult.message_id}
+                      {reminderSendResult.attachments.length > 0 && ` · 첨부 ${reminderSendResult.attachments.length}개`}
+                      {reminderSendResult.mode === "mock" && "  (mock 발송)"}
+                    </p>
                   )}
                 </div>
               </div>
