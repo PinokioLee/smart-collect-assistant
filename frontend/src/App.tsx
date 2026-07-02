@@ -212,71 +212,64 @@ export default function App() {
         {/* ===== 01 요청 ===== */}
         <section className="lane">
           <div className="lane-head">
-            <div className="lane-eyebrow">
-              <span className="lane-no">01</span>
-              <span className="lane-kicker">요청</span>
-            </div>
+            <div className="lane-eyebrow"><span className="lane-no">01</span><span className="lane-kicker">요청</span></div>
             <h2 className="lane-title">취합 요청 메일 보내기</h2>
             <p className="lane-desc">받은 요청 → 내 스타일 초안 → 양식 첨부·발송</p>
           </div>
           <div className="lane-body">
-            <div className="sub">
-              <div className="sub-label"><span className="step-chip">A</span> 받은 취합 요청 내용</div>
-              <div className="row">
-                <button className="ghost" onClick={loadSampleEmail}>내장 샘플 메일 불러오기</button>
+            <div className="split wide-left">
+              <div className="col">
+                <div className="sub">
+                  <div className="sub-label"><span className="step-chip">A</span> 받은 취합 요청 내용</div>
+                  <div className="row"><button className="ghost" onClick={loadSampleEmail}>내장 샘플 메일 불러오기</button></div>
+                  <p className="hint">실제 Gmail 메일은 Claude Code가 Gmail MCP로 가져와 아래에 붙여넣습니다.</p>
+                  <label>제목</label>
+                  <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="예: 2026년 6월 시스템 개선 요청사항 취합" />
+                  <label>본문 (직접 붙여넣기 가능)</label>
+                  <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={6} placeholder="작성 항목, 마감일, 긴급도 기준 등을 포함한 본문" />
+                </div>
+                <div className="sub">
+                  <div className="sub-label"><span className="step-chip">B</span> 내 발송 스타일 <span className="opt">선택 · {styleCount}개</span></div>
+                  <label>내가 작성한 메일 파일 (.txt / .md / .eml)</label>
+                  <input type="file" accept=".txt,.md,.eml" multiple onChange={uploadStyle} />
+                  <label>또는 과거 메일 본문 붙여넣기</label>
+                  <textarea value={styleInput} onChange={(e) => setStyleInput(e.target.value)} rows={2} placeholder="붙여넣고 저장하면 초안 톤에 반영됩니다." />
+                  <button className="ghost inline" onClick={saveStylePaste}>붙여넣은 본문 저장</button>
+                </div>
               </div>
-              <p className="hint">실제 Gmail 메일은 Claude Code가 Gmail MCP로 가져와 아래에 붙여넣습니다.</p>
-              <label>제목</label>
-              <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="예: 2026년 6월 시스템 개선 요청사항 취합" />
-              <label>본문 (직접 붙여넣기 가능)</label>
-              <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={5} placeholder="작성 항목, 마감일, 긴급도 기준 등을 포함한 본문" />
-            </div>
 
-            <div className="sub">
-              <div className="sub-label">
-                <span className="step-chip">B</span> 내 발송 스타일 <span className="opt">선택 · {styleCount}개</span>
-              </div>
-              <label>내가 작성한 메일 파일 (.txt / .md / .eml)</label>
-              <input type="file" accept=".txt,.md,.eml" multiple onChange={uploadStyle} />
-              <label>또는 과거 메일 본문 붙여넣기</label>
-              <textarea value={styleInput} onChange={(e) => setStyleInput(e.target.value)} rows={2} placeholder="붙여넣고 저장하면 초안 톤에 반영됩니다." />
-              <button className="ghost inline" onClick={saveStylePaste}>붙여넣은 본문 저장</button>
-            </div>
-
-            <div className="sub">
-              <div className="sub-label"><span className="step-chip">C</span> 요청 메일 초안 &amp; 발송</div>
-              <button className="primary block-btn" onClick={buildGuide} disabled={guideLoading}>
-                {guideLoading ? "생성 중…" : "요청 메일 초안 생성 (내 스타일)"}
-              </button>
-
-              <div className="dispatch">
-                <h4>보낼 요청 메일 — 수정·직접 작성 가능</h4>
-                {guide && (
-                  <span className={`chip badge-inline${guide.style_used ? "" : " warn"}`}>
-                    {guide.style_used ? `내 발송 스타일 반영됨 (${guide.style_sources.join(", ")})` : "스타일 샘플 없음 · 기본 톤"}
-                  </span>
-                )}
-                <label>메일 제목</label>
-                <input value={draftSubject} onChange={(e) => setDraftSubject(e.target.value)} />
-                <label>메일 본문</label>
-                <textarea value={draftBody} onChange={(e) => setDraftBody(e.target.value)} rows={7} />
-                <label>첨부 양식 엑셀 (요청과 함께 받은 양식)</label>
-                <input type="file" accept=".xlsx,.xls" multiple onChange={(e) => setAttachFiles(Array.from(e.target.files ?? []))} />
-                {attachFiles.length > 0 && (
-                  <ul className="filelist">{attachFiles.map((f) => (<li key={f.name}>📎 {f.name}</li>))}</ul>
-                )}
-                <label>수신자 이메일 (쉼표로 여러 명)</label>
-                <input value={recipients} onChange={(e) => setRecipients(e.target.value)} placeholder="hong@company.com, kim@company.com" />
-                <button className="primary inline" onClick={sendRequest} disabled={sendLoading}>
-                  {sendLoading ? "발송 중…" : "메일 보내기"}
-                </button>
-                {sendResult && (
-                  <p className="oktext">
-                    {sendResult.mode} · {sendResult.status} · {sendResult.message_id}
-                    {sendResult.attachments.length > 0 && ` · 첨부 ${sendResult.attachments.length}개`}
-                    {sendResult.mode === "mock" && "  (mock 발송)"}
-                  </p>
-                )}
+              <div className="col">
+                <div className="sub">
+                  <div className="sub-label"><span className="step-chip">C</span> 요청 메일 초안 &amp; 발송</div>
+                  <button className="primary block-btn" onClick={buildGuide} disabled={guideLoading}>
+                    {guideLoading ? "생성 중…" : "요청 메일 초안 생성 (내 스타일)"}
+                  </button>
+                  <div className="dispatch">
+                    <h4>보낼 요청 메일 — 수정·직접 작성 가능</h4>
+                    {guide && (
+                      <span className={`chip badge-inline${guide.style_used ? "" : " warn"}`}>
+                        {guide.style_used ? `내 발송 스타일 반영됨 (${guide.style_sources.join(", ")})` : "스타일 샘플 없음 · 기본 톤"}
+                      </span>
+                    )}
+                    <label>메일 제목</label>
+                    <input value={draftSubject} onChange={(e) => setDraftSubject(e.target.value)} placeholder="초안 생성 시 자동 입력 / 직접 작성 가능" />
+                    <label>메일 본문</label>
+                    <textarea value={draftBody} onChange={(e) => setDraftBody(e.target.value)} rows={8} placeholder="초안 생성 시 자동 입력 / 직접 작성 가능" />
+                    <label>첨부 양식 엑셀 (요청과 함께 받은 양식)</label>
+                    <input type="file" accept=".xlsx,.xls" multiple onChange={(e) => setAttachFiles(Array.from(e.target.files ?? []))} />
+                    {attachFiles.length > 0 && (<ul className="filelist">{attachFiles.map((f) => (<li key={f.name}>📎 {f.name}</li>))}</ul>)}
+                    <label>수신자 이메일 (쉼표로 여러 명)</label>
+                    <input value={recipients} onChange={(e) => setRecipients(e.target.value)} placeholder="hong@company.com, kim@company.com" />
+                    <button className="primary inline" onClick={sendRequest} disabled={sendLoading}>{sendLoading ? "발송 중…" : "메일 보내기"}</button>
+                    {sendResult && (
+                      <p className="oktext">
+                        {sendResult.mode} · {sendResult.status} · {sendResult.message_id}
+                        {sendResult.attachments.length > 0 && ` · 첨부 ${sendResult.attachments.length}개`}
+                        {sendResult.mode === "mock" && "  (mock 발송)"}
+                      </p>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -285,161 +278,145 @@ export default function App() {
         {/* ===== 02 검증 ===== */}
         <section className="lane">
           <div className="lane-head">
-            <div className="lane-eyebrow">
-              <span className="lane-no">02</span>
-              <span className="lane-kicker">검증</span>
-            </div>
+            <div className="lane-eyebrow"><span className="lane-no">02</span><span className="lane-kicker">검증</span></div>
             <h2 className="lane-title">제출 엑셀 검증 · 병합</h2>
             <p className="lane-desc">회신 첨부 검증 → 정상만 병합 → 취합 엑셀 다운로드</p>
           </div>
           <div className="lane-body">
-            <div className="row">
-              <button className="ghost" onClick={makeSamples}>샘플 제출 엑셀 생성</button>
-            </div>
-            <label>회신받은 제출 엑셀 업로드</label>
-            <input type="file" accept=".xlsx,.xls" multiple onChange={(e) => setFiles(Array.from(e.target.files ?? []))} />
-            {files.length > 0 && (
-              <ul className="filelist">{files.map((f) => (<li key={f.name}>📄 {f.name}</li>))}</ul>
-            )}
-            <button className="primary block-btn" onClick={run} disabled={loading}>
-              {loading ? "처리 중…" : "검증 · 병합 실행"}
-            </button>
-
-            {result && vr && (
-              <div className="result">
-                <div className="stats">
-                  <Stat label="파일" value={vr.total_files} />
-                  <Stat label="전체 행" value={vr.total_rows} />
-                  <Stat label="정상" value={vr.valid_rows} tone="ok" />
-                  <Stat label="오류" value={vr.error_rows} tone={vr.error_rows ? "bad" : "ok"} />
-                </div>
-
-                {result.extracted_requirements && (
-                  <div className="block">
-                    <h4>메일 분석</h4>
-                    <p className="field-line"><b>제출 기한</b> · {result.extracted_requirements.deadline ?? "확인 필요"}</p>
-                    <div className="chips">
-                      {result.extracted_requirements.required_fields.map((f) => (<span className="chip" key={f}>{f}</span>))}
+            <div className="split">
+              <div className="col">
+                <div className="row"><button className="ghost" onClick={makeSamples}>샘플 제출 엑셀 생성</button></div>
+                <label>회신받은 제출 엑셀 업로드</label>
+                <input type="file" accept=".xlsx,.xls" multiple onChange={(e) => setFiles(Array.from(e.target.files ?? []))} />
+                {files.length > 0 && (<ul className="filelist">{files.map((f) => (<li key={f.name}>📄 {f.name}</li>))}</ul>)}
+                <button className="primary block-btn" onClick={run} disabled={loading}>{loading ? "처리 중…" : "검증 · 병합 실행"}</button>
+              </div>
+              <div className="col">
+                <div className="outbox">
+                  <p className="outbox-title">검증 결과</p>
+                  {result && vr ? (
+                    <div className="result">
+                      <div className="stats">
+                        <Stat label="파일" value={vr.total_files} />
+                        <Stat label="전체 행" value={vr.total_rows} />
+                        <Stat label="정상" value={vr.valid_rows} tone="ok" />
+                        <Stat label="오류" value={vr.error_rows} tone={vr.error_rows ? "bad" : "ok"} />
+                      </div>
+                      {result.validation_rules && (
+                        <div className="block">
+                          <h4>적용된 검증 규칙</h4>
+                          <p className="field-line"><b>필수</b> · {result.validation_rules.required_columns.join(", ") || "-"}</p>
+                          <p className="field-line"><b>날짜</b> · {result.validation_rules.date_columns.join(", ") || "-"}</p>
+                          <p className="field-line"><b>코드값</b> · {Object.entries(result.validation_rules.code_rules).map(([k, v]) => `${k}=${v.join("/")}`).join(", ") || "-"}</p>
+                        </div>
+                      )}
+                      {vr.error_details.length > 0 && (
+                        <div className="block">
+                          <h4>오류 상세 ({vr.error_details.length})</h4>
+                          <div className="table-wrap">
+                            <table className="errtable">
+                              <thead><tr><th>파일</th><th>행</th><th>컬럼</th><th>유형</th><th>값</th></tr></thead>
+                              <tbody>
+                                {vr.error_details.map((e, i) => (
+                                  <tr key={i}><td>{e.file}</td><td>{e.row}</td><td>{e.column}</td><td><span className="etype">{e.error_type}</span></td><td>{e.value ?? "-"}</td></tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+                      <div className="block downloads">
+                        {result.downloads.merged && (<a className="primary" href={result.downloads.merged}>⬇ 취합 엑셀</a>)}
+                        {result.downloads.error && (<a className="ghost" href={result.downloads.error}>⬇ 오류 보고서</a>)}
+                      </div>
+                      <div className="block">
+                        <h4>에이전트 실행 흐름</h4>
+                        <div className="flow">{result.agent_handoff_history.map((h, i) => (<span className="node" key={i}>{h.split(":")[1] ?? h}</span>))}</div>
+                      </div>
                     </div>
-                  </div>
-                )}
-
-                {result.validation_rules && (
-                  <div className="block">
-                    <h4>적용된 검증 규칙</h4>
-                    <p className="field-line"><b>필수</b> · {result.validation_rules.required_columns.join(", ") || "-"}</p>
-                    <p className="field-line"><b>날짜</b> · {result.validation_rules.date_columns.join(", ") || "-"}</p>
-                    <p className="field-line"><b>코드값</b> · {Object.entries(result.validation_rules.code_rules).map(([k, v]) => `${k}=${v.join("/")}`).join(", ") || "-"}</p>
-                    <p className="field-line"><b>중복키</b> · {result.validation_rules.duplicate_keys.join(", ") || "-"}</p>
-                  </div>
-                )}
-
-                {vr.error_details.length > 0 && (
-                  <div className="block">
-                    <h4>오류 상세 ({vr.error_details.length})</h4>
-                    <div className="table-wrap">
-                      <table className="errtable">
-                        <thead>
-                          <tr><th>파일</th><th>행</th><th>컬럼</th><th>유형</th><th>입력값</th></tr>
-                        </thead>
-                        <tbody>
-                          {vr.error_details.map((e, i) => (
-                            <tr key={i}>
-                              <td>{e.file}</td>
-                              <td>{e.row}</td>
-                              <td>{e.column}</td>
-                              <td><span className="etype">{e.error_type}</span></td>
-                              <td>{e.value ?? "-"}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-
-                <div className="block downloads">
-                  {result.downloads.merged && (<a className="primary" href={result.downloads.merged}>⬇ 취합 엑셀</a>)}
-                  {result.downloads.error && (<a className="ghost" href={result.downloads.error}>⬇ 오류 보고서</a>)}
-                </div>
-
-                <div className="block">
-                  <h4>에이전트 실행 흐름</h4>
-                  <div className="flow">
-                    {result.agent_handoff_history.map((h, i) => (<span className="node" key={i}>{h.split(":")[1] ?? h}</span>))}
-                  </div>
+                  ) : (
+                    <div className="placeholder">회신 엑셀을 업로드하고 ‘검증 · 병합 실행’을 누르면<br />통계 · 오류 상세 · 취합 엑셀 다운로드가 여기 표시됩니다.</div>
+                  )}
                 </div>
               </div>
-            )}
+            </div>
           </div>
         </section>
 
         {/* ===== 03 추적 ===== */}
         <section className="lane">
           <div className="lane-head">
-            <div className="lane-eyebrow">
-              <span className="lane-no">03</span>
-              <span className="lane-kicker">추적</span>
-            </div>
+            <div className="lane-eyebrow"><span className="lane-no">03</span><span className="lane-kicker">추적</span></div>
             <h2 className="lane-title">제출 현황 · 리마인드</h2>
             <p className="lane-desc">제출 현황 확인 · 미제출자 리마인드 초안</p>
           </div>
           <div className="lane-body">
-            <p className="hint">현재는 파일 식별자 기반 mock 추적입니다. 실제 회신 확인은 Gmail MCP로 수행할 수 있습니다(후속 확장).</p>
-            <label>제출 식별자 (쉼표 구분)</label>
-            <input value={submitted} onChange={(e) => setSubmitted(e.target.value)} />
-            <label>마감일</label>
-            <input value={deadline} onChange={(e) => setDeadline(e.target.value)} />
-            <button className="primary block-btn" onClick={runTrack} disabled={trackLoading}>
-              {trackLoading ? "확인 중…" : "제출 현황 확인 · 리마인드"}
-            </button>
-            {trackResult && (
-              <div className="result">
-                <p className="field-line"><b>{trackResult.summary}</b></p>
-                <div className="chips">
-                  {trackResult.missing_list.map((m) => (<span className="chip warn" key={m.email}>{m.dept} 미제출</span>))}
-                </div>
-                {trackResult.reminder && (
-                  <pre>{trackResult.reminder.reminder_mail_subject + "\n" + trackResult.reminder.reminder_mail_body}</pre>
+            <div className="split">
+              <div className="col">
+                <p className="hint">현재는 파일 식별자 기반 mock 추적입니다. 실제 회신 확인은 Gmail MCP로 수행할 수 있습니다(후속 확장).</p>
+                <label>제출 식별자 (쉼표 구분)</label>
+                <input value={submitted} onChange={(e) => setSubmitted(e.target.value)} />
+                <label>마감일</label>
+                <input value={deadline} onChange={(e) => setDeadline(e.target.value)} />
+                <button className="primary block-btn" onClick={runTrack} disabled={trackLoading}>{trackLoading ? "확인 중…" : "제출 현황 확인 · 리마인드"}</button>
+                {trackResult && (
+                  <div className="block">
+                    <p className="field-line"><b>{trackResult.summary}</b></p>
+                    <div className="chips">{trackResult.missing_list.map((m) => (<span className="chip warn" key={m.email}>{m.dept} 미제출</span>))}</div>
+                  </div>
                 )}
               </div>
-            )}
+              <div className="col">
+                <div className="outbox">
+                  <p className="outbox-title">리마인드 메일 초안</p>
+                  {trackResult?.reminder ? (
+                    <pre>{trackResult.reminder.reminder_mail_subject + "\n\n" + trackResult.reminder.reminder_mail_body}</pre>
+                  ) : (
+                    <div className="placeholder">‘제출 현황 확인’을 누르면 미제출자에게 보낼<br />리마인드 메일 초안이 여기 표시됩니다.</div>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         </section>
 
         {/* ===== 04 수정 ===== */}
         <section className="lane">
           <div className="lane-head">
-            <div className="lane-eyebrow">
-              <span className="lane-no">04</span>
-              <span className="lane-kicker">수정</span>
-            </div>
+            <div className="lane-eyebrow"><span className="lane-no">04</span><span className="lane-kicker">수정</span></div>
             <h2 className="lane-title">공통 항목 일괄 수정</h2>
             <p className="lane-desc">여러 파일의 공통 컬럼을 한 번에 수정 (원본 보존)</p>
           </div>
           <div className="lane-body">
-            <label>수정할 엑셀 파일 업로드</label>
-            <input type="file" accept=".xlsx,.xls" multiple onChange={(e) => setUpdateFilesList(Array.from(e.target.files ?? []))} />
-            {updateFilesList.length > 0 && (
-              <ul className="filelist">{updateFilesList.map((f) => (<li key={f.name}>📄 {f.name}</li>))}</ul>
-            )}
-            <label>대상 컬럼</label>
-            <input value={targetField} onChange={(e) => setTargetField(e.target.value)} />
-            <label>새 값</label>
-            <input value={newValue} onChange={(e) => setNewValue(e.target.value)} />
-            <label>기존 값 필터 (비우면 전체 적용)</label>
-            <input value={oldValue} onChange={(e) => setOldValue(e.target.value)} placeholder="비우면 전체 적용" />
-            <button className="primary block-btn" onClick={runUpdateFields} disabled={updateLoading}>
-              {updateLoading ? "수정 중…" : "업로드 파일 일괄 수정"}
-            </button>
-            {updateResult && (
-              <div className="result">
-                <p className="field-line"><b>변경 셀 {updateResult.update_count}개</b></p>
-                <div className="downloads">
-                  {updateResult.downloads.map((href, i) => (<a className="primary" href={href} key={href}>⬇ 수정 파일 {updateResult.downloads.length > 1 ? i + 1 : ""}</a>))}
+            <div className="split">
+              <div className="col">
+                <label>수정할 엑셀 파일 업로드</label>
+                <input type="file" accept=".xlsx,.xls" multiple onChange={(e) => setUpdateFilesList(Array.from(e.target.files ?? []))} />
+                {updateFilesList.length > 0 && (<ul className="filelist">{updateFilesList.map((f) => (<li key={f.name}>📄 {f.name}</li>))}</ul>)}
+                <label>대상 컬럼</label>
+                <input value={targetField} onChange={(e) => setTargetField(e.target.value)} />
+                <label>새 값</label>
+                <input value={newValue} onChange={(e) => setNewValue(e.target.value)} />
+                <label>기존 값 필터 (비우면 전체 적용)</label>
+                <input value={oldValue} onChange={(e) => setOldValue(e.target.value)} placeholder="비우면 전체 적용" />
+                <button className="primary block-btn" onClick={runUpdateFields} disabled={updateLoading}>{updateLoading ? "수정 중…" : "업로드 파일 일괄 수정"}</button>
+              </div>
+              <div className="col">
+                <div className="outbox">
+                  <p className="outbox-title">수정 결과</p>
+                  {updateResult ? (
+                    <div className="result">
+                      <p className="field-line"><b>변경 셀 {updateResult.update_count}개</b> · 파일 {updateResult.downloads.length}개</p>
+                      <div className="block downloads">
+                        {updateResult.downloads.map((href, i) => (<a className="primary" href={href} key={href}>⬇ 수정 파일 {updateResult.downloads.length > 1 ? i + 1 : ""}</a>))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="placeholder">파일과 대상 컬럼·값을 입력하고 ‘일괄 수정’을 누르면<br />변경 요약과 수정 파일 다운로드가 여기 표시됩니다.</div>
+                  )}
                 </div>
               </div>
-            )}
+            </div>
           </div>
         </section>
       </div>
