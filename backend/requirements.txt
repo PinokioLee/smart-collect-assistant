@@ -27,7 +27,8 @@ google-auth-oauthlib>=1.0.0
 google-auth-httplib2>=0.2.0
 
 # 선택: Langfuse 추적 (USE_LANGFUSE=true 일 때)
-# langfuse
+# 코드가 v2 API(client.trace/span)를 사용하므로 v3 미만으로 고정
+langfuse<3
 
 # 선택: FAISS 기반 RAG (운영 단계). Python 3.14 에서는 휠 부재 가능
 # faiss-cpu
