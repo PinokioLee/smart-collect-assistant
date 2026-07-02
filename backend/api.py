@@ -192,6 +192,55 @@ def save_style_mail(payload: dict) -> dict:
     return {"saved": str(dest), "count": count}
 
 
+def _extract_eml_text(raw: bytes) -> str:
+    """.eml 바이트에서 제목 + 본문 텍스트를 추출한다."""
+    from email import message_from_bytes
+    from email.policy import default
+
+    msg = message_from_bytes(raw, policy=default)
+    subject = msg.get("subject", "") or ""
+    body = ""
+    try:
+        part = msg.get_body(preferencelist=("plain", "html"))
+        if part is not None:
+            body = part.get_content()
+    except Exception:  # noqa: BLE001 - 폴백 보장
+        payload = msg.get_payload()
+        body = payload if isinstance(payload, str) else ""
+    return (f"제목: {subject}\n\n" if subject else "") + (body or "")
+
+
+@app.post("/api/upload-style-mails")
+async def upload_style_mails(files: list[UploadFile] = File(...)) -> dict:
+    """과거에 내가 작성한 메일 파일(.txt/.md/.eml)을 스타일 코퍼스로 업로드한다(#4)."""
+    if not files:
+        raise HTTPException(status_code=400, detail="업로드할 메일 파일이 필요합니다.")
+    rag_tools.STYLE_DIR.mkdir(parents=True, exist_ok=True)
+    saved: list[str] = []
+    for up in files:
+        name = Path(up.filename or "").name
+        ext = name.lower().rsplit(".", 1)[-1] if "." in name else ""
+        raw = await up.read()
+        if ext == "eml":
+            text = _extract_eml_text(raw)
+            out_name = (name.rsplit(".", 1)[0] or "mail") + ".txt"
+        elif ext in {"txt", "md"}:
+            text = raw.decode("utf-8", errors="ignore")
+            out_name = name
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"지원하지 않는 형식입니다: {name} (.txt/.md/.eml만 가능)",
+            )
+        dest = rag_tools.STYLE_DIR / out_name
+        dest.write_text(text, encoding="utf-8")
+        saved.append(dest.name)
+    count = len(
+        [p for p in rag_tools.STYLE_DIR.glob("*") if p.suffix.lower() in {".txt", ".md"}]
+    )
+    return {"saved": saved, "count": count}
+
+
 @app.get("/api/style-mails")
 def style_mails() -> dict:
     """저장된 스타일 샘플 개수/목록(#4). UI 배지용."""

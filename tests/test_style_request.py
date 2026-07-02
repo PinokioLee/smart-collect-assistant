@@ -83,6 +83,52 @@ def test_style_mails_lists_saved(monkeypatch, tmp_path):
     assert "a.txt" in r.json()["files"]
 
 
+def test_upload_style_mails_txt(monkeypatch, tmp_path):
+    monkeypatch.setattr(rag_tools, "STYLE_DIR", tmp_path)
+    client = TestClient(app)
+    r = client.post(
+        "/api/upload-style-mails",
+        files=[
+            ("files", ("mymail.txt", "안녕하세요 협조 부탁드립니다".encode("utf-8"), "text/plain")),
+        ],
+    )
+    assert r.status_code == 200
+    assert r.json()["count"] == 1
+    assert "mymail.txt" in r.json()["saved"]
+    assert (tmp_path / "mymail.txt").read_text(encoding="utf-8") == "안녕하세요 협조 부탁드립니다"
+
+
+def test_upload_style_mails_rejects_bad_ext(monkeypatch, tmp_path):
+    monkeypatch.setattr(rag_tools, "STYLE_DIR", tmp_path)
+    client = TestClient(app)
+    r = client.post(
+        "/api/upload-style-mails",
+        files=[("files", ("bad.xlsx", b"data", "application/octet-stream"))],
+    )
+    assert r.status_code == 400
+
+
+def test_upload_style_mails_eml_extracts_body(monkeypatch, tmp_path):
+    monkeypatch.setattr(rag_tools, "STYLE_DIR", tmp_path)
+    eml = (
+        "Subject: 6월 취합 요청\r\n"
+        "From: me@company.com\r\n"
+        "Content-Type: text/plain; charset=utf-8\r\n\r\n"
+        "안녕하세요. 늘 협조 감사드립니다."
+    ).encode("utf-8")
+    client = TestClient(app)
+    r = client.post(
+        "/api/upload-style-mails",
+        files=[("files", ("past.eml", eml, "message/rfc822"))],
+    )
+    assert r.status_code == 200
+    assert r.json()["count"] == 1
+    saved = tmp_path / "past.txt"
+    assert saved.exists()
+    text = saved.read_text(encoding="utf-8")
+    assert "협조 감사드립니다" in text
+
+
 # ---------- Task 4: /api/guide 스타일 연결 ----------
 
 def test_guide_reports_style_used(monkeypatch, tmp_path):

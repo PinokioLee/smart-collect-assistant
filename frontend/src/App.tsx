@@ -7,6 +7,7 @@ import {
   getSampleEmail,
   getStyleMails,
   saveStyleMail,
+  uploadStyleMails,
   sendEmail,
   trackSubmissions,
   updateFields,
@@ -303,6 +304,21 @@ export default function App() {
             <h3>작성 가이드와 요청 메일 초안</h3>
             <div className="block">
               <p className="muted">내 과거 발송 스타일 샘플: <b>{styleCount}</b>개</p>
+              <label>내가 작성한 메일 파일 업로드 (.txt / .md / .eml)</label>
+              <input
+                type="file"
+                accept=".txt,.md,.eml"
+                multiple
+                onChange={async (e) => {
+                  const picked = Array.from(e.target.files ?? []);
+                  if (picked.length === 0) return;
+                  const r = await uploadStyleMails(picked);
+                  setStyleCount(r.count);
+                  e.target.value = "";
+                  alert(`스타일 샘플 ${r.saved.length}개 업로드됨 (총 ${r.count}개). '가이드/메일 초안 생성'을 누르면 반영됩니다.`);
+                }}
+              />
+              <label>또는 메일 본문 직접 붙여넣기</label>
               <textarea
                 value={styleInput}
                 onChange={(e) => setStyleInput(e.target.value)}
@@ -318,7 +334,7 @@ export default function App() {
                   setStyleInput("");
                 }}
               >
-                스타일 샘플로 저장
+                붙여넣은 본문 저장
               </button>
             </div>
             <button className="ghost" onClick={buildGuide} disabled={guideLoading}>

@@ -96,6 +96,13 @@ export async function saveStyleMail(subject: string, body: string): Promise<{ sa
   return data;
 }
 
+export async function uploadStyleMails(files: File[]): Promise<{ saved: string[]; count: number }> {
+  const form = new FormData();
+  files.forEach((f) => form.append("files", f));
+  const { data } = await client.post("/upload-style-mails", form);
+  return data;
+}
+
 export interface SendEmailInput {
   to: string[];
   subject: string;
