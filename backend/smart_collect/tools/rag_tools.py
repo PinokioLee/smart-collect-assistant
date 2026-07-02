@@ -13,6 +13,31 @@ from pathlib import Path
 from ..config import ROOT_DIR
 
 REFERENCE_DIR = ROOT_DIR / "docs" / "reference"
+STYLE_DIR = REFERENCE_DIR / "style_samples"
+
+
+def retrieve_style_samples(query: str, top_k: int = 3) -> list[dict]:
+    """사용자의 과거 발송 요청 메일을 검색해 스타일 예시로 반환한다.
+
+    스타일 반영이 목적이므로 질의 매칭이 0이어도 파일이 있으면 포함하고,
+    매칭 점수 → 최근 수정순으로 정렬한다.
+    Returns: [{"title": 파일명, "snippet": 본문 앞부분}]
+    """
+    if not STYLE_DIR.exists():
+        return []
+    terms = [t for t in query.replace("/", " ").split() if t]
+    scored: list[tuple[float, float, str, str]] = []
+    for path in STYLE_DIR.rglob("*"):
+        if path.suffix.lower() not in {".md", ".txt"}:
+            continue
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        hits = sum(text.count(t) for t in terms) if terms else 0
+        score = min(hits / (len(terms) or 1) / 5, 1.0)
+        scored.append((score, path.stat().st_mtime, path.name, text[:1500]))
+    scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    return [
+        {"title": name, "snippet": snip} for _, _, name, snip in scored[:top_k]
+    ]
 
 
 def retrieve_reference_documents(

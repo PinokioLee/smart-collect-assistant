@@ -28,6 +28,7 @@ from smart_collect.graph import run_collection_graph  # noqa: E402
 from smart_collect.pipeline import run_collection  # noqa: E402
 from smart_collect.sample_data import MOCK_EMAIL, generate_samples  # noqa: E402
 from smart_collect.state import AgentState  # noqa: E402
+from smart_collect.tools import rag_tools  # noqa: E402
 
 UPLOAD_DIR = DATA_DIR / "uploads"
 
@@ -165,21 +166,66 @@ async def update_fields(
     return r
 
 
+@app.post("/api/save-style-mail")
+def save_style_mail(payload: dict) -> dict:
+    """과거 발송 요청 메일을 스타일 코퍼스로 저장한다(#4).
+
+    payload: {filename?, subject?, body}
+    Claude Code(MCP)가 Sent 메일을 이 형태로 전달하거나, UI 파일 업로드로도 사용.
+    """
+    body = str(payload.get("body") or "").strip()
+    if not body:
+        raise HTTPException(status_code=400, detail="메일 본문(body)이 필요합니다.")
+    subject = str(payload.get("subject") or "").strip()
+    rag_tools.STYLE_DIR.mkdir(parents=True, exist_ok=True)
+    filename = str(payload.get("filename") or "").strip()
+    if not filename:
+        filename = "style-" + datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    if not filename.lower().endswith((".txt", ".md")):
+        filename += ".txt"
+    dest = rag_tools.STYLE_DIR / Path(filename).name
+    content = (f"제목: {subject}\n\n" if subject else "") + body
+    dest.write_text(content, encoding="utf-8")
+    count = len(
+        [p for p in rag_tools.STYLE_DIR.glob("*") if p.suffix.lower() in {".txt", ".md"}]
+    )
+    return {"saved": str(dest), "count": count}
+
+
+@app.get("/api/style-mails")
+def style_mails() -> dict:
+    """저장된 스타일 샘플 개수/목록(#4). UI 배지용."""
+    if not rag_tools.STYLE_DIR.exists():
+        return {"count": 0, "files": []}
+    files = sorted(
+        p.name for p in rag_tools.STYLE_DIR.glob("*")
+        if p.suffix.lower() in {".txt", ".md"}
+    )
+    return {"count": len(files), "files": files}
+
+
 @app.post("/api/guide")
 def guide(subject: str = Form(...), body: str = Form(...)) -> dict:
-    """작성 가이드 + 요청 메일 초안 (#2, #3)."""
+    """작성 가이드 + 요청 메일 초안 (과거 발송 스타일 RAG 반영)."""
     from smart_collect.tools.guide_tools import create_request_mail, generate_writing_guide
     from smart_collect.tools.requirement_tools import analyze_collection_email
     from smart_collect.tools.submission_tools import SAMPLE_RECIPIENTS
 
     req = analyze_collection_email(subject, body, prefer_llm=True)
-    g = generate_writing_guide(req)
-    m = create_request_mail(g["guide_body"], SAMPLE_RECIPIENTS, req.deadline, "취합양식.xlsx")
+    query = " ".join(filter(None, [req.request_title or "", *req.required_fields]))
+    style_samples = rag_tools.retrieve_style_samples(query)
+    g = generate_writing_guide(req, references=style_samples or None)
+    m = create_request_mail(
+        g["guide_body"], SAMPLE_RECIPIENTS, req.deadline, "취합양식.xlsx",
+        style_samples=style_samples or None,
+    )
     return {
         "extracted": req.model_dump(),
         "guide": g,
         "mail_draft": m,
         "llm_used": settings.azure_ready,
+        "style_used": bool(style_samples),
+        "style_sources": [s["title"] for s in style_samples],
     }
 
 

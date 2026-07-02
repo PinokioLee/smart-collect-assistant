@@ -64,15 +64,38 @@ def _guide_fallback(req: ExtractedRequirements) -> dict:
 
 # ---------- 요청 메일 초안 ----------
 
+def _build_style_hint(style_samples: list[dict] | None) -> str:
+    """과거 발송 메일을 톤/구성 예시로 주입할 프롬프트 조각을 만든다."""
+    if not style_samples:
+        return ""
+    examples = "\n\n".join(
+        f"[예시 {i + 1}] {s.get('snippet', '')[:600]}"
+        for i, s in enumerate(style_samples[:3])
+    )
+    return (
+        "\n\n아래는 내가 평소 보내는 요청 메일 예시입니다. "
+        "이 인사말·톤·구성·맺음말 스타일을 따라 작성하세요(내용 기준은 위 안내).\n"
+        f"{examples}"
+    )
+
+
 def create_request_mail(
-    guide_body: str, recipients: list[dict], deadline: str | None, attachment_name: str
+    guide_body: str,
+    recipients: list[dict],
+    deadline: str | None,
+    attachment_name: str,
+    style_samples: list[dict] | None = None,
 ) -> dict:
-    """작성자에게 보낼 취합 요청 메일 초안(제목/본문)을 생성한다."""
+    """작성자에게 보낼 취합 요청 메일 초안(제목/본문)을 생성한다.
+
+    style_samples 가 있으면 사용자의 과거 발송 톤을 모방하도록 프롬프트에 주입한다.
+    """
     prompt = (
         "회사 내부 취합 요청 메일 초안을 작성하세요. 정중하고 간결한 업무 톤. "
         "JSON 으로만 응답: {mail_subject, mail_body}\n\n"
         f"안내 내용:\n{guide_body}\n\n제출 기한: {deadline}\n첨부: {attachment_name}\n"
         f"수신자 수: {len(recipients)}명"
+        f"{_build_style_hint(style_samples)}"
     )
     content = chat([{"role": "user", "content": prompt}], temperature=0.3)
     data = _try_json(content)
