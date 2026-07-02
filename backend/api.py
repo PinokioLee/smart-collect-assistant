@@ -311,6 +311,53 @@ def send_email_endpoint(payload: dict) -> dict:
         raise HTTPException(status_code=500, detail=f"메일 발송 실패: {exc}") from exc
 
 
+@app.post("/api/send-request-mail")
+async def send_request_mail(
+    to: str = Form(...),
+    subject: str = Form(...),
+    body: str = Form(...),
+    files: list[UploadFile] = File(default=[]),
+) -> dict:
+    """요청 메일 초안 + 첨부 양식 엑셀을 발송한다(1번 흐름).
+
+    to: 쉼표로 구분된 수신자 이메일. files: 요청과 함께 받은 양식 엑셀(첨부).
+    기본은 mock 발송. EMAIL_SEND_MODE=gmail 이면 실제 발송.
+    """
+    from smart_collect.tools.email_tools import EmailSendRequest, send_email
+
+    recipients = [v.strip() for v in to.split(",") if v.strip()]
+    if not recipients:
+        raise HTTPException(status_code=400, detail="수신자 이메일이 필요합니다.")
+    if not subject.strip() or not body.strip():
+        raise HTTPException(status_code=400, detail="메일 제목과 본문이 필요합니다.")
+
+    ensure_dirs()
+    attach_paths: list[str] = []
+    if files:
+        req_id = "SEND-" + datetime.now().strftime("%Y%m%d-%H%M%S")
+        adir = UPLOAD_DIR / req_id
+        adir.mkdir(parents=True, exist_ok=True)
+        for up in files:
+            if not up.filename:
+                continue
+            dest = adir / Path(up.filename).name
+            with dest.open("wb") as f:
+                shutil.copyfileobj(up.file, f)
+            attach_paths.append(str(dest))
+
+    try:
+        res = send_email(
+            EmailSendRequest(
+                to=recipients, subject=subject, body=body,
+                attachment_paths=attach_paths,
+            )
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"메일 발송 실패: {exc}") from exc
+    res["attachments"] = [Path(p).name for p in attach_paths]
+    return res
+
+
 @app.post("/api/track")
 def track(payload: dict) -> dict:
     """제출 현황 추적 + 미제출자 리마인드 (#5, #6).

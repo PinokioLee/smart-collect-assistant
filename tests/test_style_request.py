@@ -147,6 +147,38 @@ def test_guide_reports_style_used(monkeypatch, tmp_path):
     assert "past.txt" in d["style_sources"]
 
 
+def test_send_request_mail_with_attachment(tmp_path):
+    client = TestClient(app)
+    r = client.post(
+        "/api/send-request-mail",
+        data={"to": "a@x.com, b@x.com", "subject": "취합 요청", "body": "양식 작성 부탁드립니다"},
+        files=[("files", ("양식.xlsx", b"dummy-excel-bytes", "application/vnd.ms-excel"))],
+    )
+    assert r.status_code == 200
+    d = r.json()
+    assert d["recipients"] == ["a@x.com", "b@x.com"]
+    assert "양식.xlsx" in d["attachments"]
+
+
+def test_send_request_mail_requires_recipient():
+    client = TestClient(app)
+    r = client.post(
+        "/api/send-request-mail",
+        data={"to": "  ", "subject": "s", "body": "b"},
+    )
+    assert r.status_code == 400
+
+
+def test_send_request_mail_no_attachment_ok():
+    client = TestClient(app)
+    r = client.post(
+        "/api/send-request-mail",
+        data={"to": "a@x.com", "subject": "s", "body": "b"},
+    )
+    assert r.status_code == 200
+    assert r.json()["attachments"] == []
+
+
 def test_guide_without_style(monkeypatch, tmp_path):
     monkeypatch.setattr(rag_tools, "STYLE_DIR", tmp_path / "empty")
     client = TestClient(app)
