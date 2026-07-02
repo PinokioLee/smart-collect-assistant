@@ -26,7 +26,12 @@ from fastapi.responses import FileResponse  # noqa: E402
 from smart_collect.config import DATA_DIR, SAMPLE_DIR, ensure_dirs, settings  # noqa: E402
 from smart_collect.graph import run_collection_graph  # noqa: E402
 from smart_collect.pipeline import run_collection  # noqa: E402
-from smart_collect.sample_data import MOCK_EMAIL, generate_samples  # noqa: E402
+from smart_collect.sample_data import (  # noqa: E402
+    MOCK_EMAIL,
+    PROJECT_COMMON_COLUMNS,
+    generate_project_common_samples,
+    generate_samples,
+)
 from smart_collect.state import AgentState  # noqa: E402
 from smart_collect.tools import rag_tools  # noqa: E402
 
@@ -86,6 +91,12 @@ def health() -> dict:
 @app.post("/api/gen-samples")
 def gen_samples() -> dict:
     return generate_samples()
+
+
+@app.post("/api/gen-project-samples")
+def gen_project_samples() -> dict:
+    """공통 항목 일괄 수정 데모용 프로젝트 엑셀 5개를 생성한다."""
+    return generate_project_common_samples()
 
 
 @app.get("/api/sample-email")
@@ -159,6 +170,59 @@ async def update_fields(
         saved, target_field, new_value,
         old_value=(old_value or None), output_dir=out_dir,
     )
+    r["downloads"] = [
+        f"/api/download-file/{request_id}/{Path(p).name}" for p in r["updated_files"]
+    ]
+    r["request_id"] = request_id
+    return r
+
+
+@app.post("/api/sync-common-fields")
+async def sync_common_fields(
+    reference_file: UploadFile = File(...),
+    target_files: list[UploadFile] = File(...),
+) -> dict:
+    """기준 파일의 공통 프로젝트 컬럼 값으로 대상 파일들을 동기화한다."""
+    from smart_collect.tools.excel_tools import sync_common_fields_from_reference
+
+    if not reference_file.filename:
+        raise HTTPException(status_code=400, detail="기준 파일이 필요합니다.")
+    if not target_files:
+        raise HTTPException(status_code=400, detail="수정 대상 파일을 1개 이상 업로드하세요.")
+    if not reference_file.filename.lower().endswith((".xlsx", ".xls")):
+        raise HTTPException(status_code=400, detail="기준 파일은 엑셀(.xlsx/.xls)이어야 합니다.")
+
+    ensure_dirs()
+    request_id = "SYNC-" + datetime.now().strftime("%Y%m%d-%H%M%S")
+    job_dir = UPLOAD_DIR / request_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = DATA_DIR / "updated_files" / request_id
+
+    ref_path = job_dir / Path(reference_file.filename).name
+    with ref_path.open("wb") as f:
+        shutil.copyfileobj(reference_file.file, f)
+
+    saved_targets: list[str] = []
+    for up in target_files:
+        if not (up.filename or "").lower().endswith((".xlsx", ".xls")):
+            raise HTTPException(
+                status_code=400, detail=f"수정 대상은 엑셀(.xlsx/.xls)이어야 합니다: {up.filename}"
+            )
+        dest = job_dir / Path(up.filename).name
+        with dest.open("wb") as f:
+            shutil.copyfileobj(up.file, f)
+        saved_targets.append(str(dest))
+
+    try:
+        r = sync_common_fields_from_reference(
+            str(ref_path),
+            saved_targets,
+            PROJECT_COMMON_COLUMNS,
+            output_dir=out_dir,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=f"공통 항목 동기화 실패: {exc}") from exc
+
     r["downloads"] = [
         f"/api/download-file/{request_id}/{Path(p).name}" for p in r["updated_files"]
     ]
@@ -340,6 +404,11 @@ async def send_request_mail(
         for up in files:
             if not up.filename:
                 continue
+            if not up.filename.lower().endswith((".xlsx", ".xls")):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"첨부 양식은 엑셀(.xlsx/.xls)만 가능합니다: {up.filename}",
+                )
             dest = adir / Path(up.filename).name
             with dest.open("wb") as f:
                 shutil.copyfileobj(up.file, f)

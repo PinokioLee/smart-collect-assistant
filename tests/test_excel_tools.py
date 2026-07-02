@@ -3,6 +3,7 @@
 import pytest
 
 from smart_collect.sample_data import generate_samples
+from smart_collect.sample_data import generate_project_common_samples
 from smart_collect.state import ValidationRule
 from smart_collect.tools import excel_tools as ex
 
@@ -81,3 +82,31 @@ def test_missing_column_detected(loaded_files):
     errors = ex.validate_required_fields(loaded_files, ["없는컬럼"])
     assert all(e.error_type == "필수 컬럼 누락" for e in errors)
     assert len(errors) == 3  # 3개 파일 모두
+
+
+def test_project_common_samples_created():
+    result = generate_project_common_samples()
+    assert len(result["excels"]) == 5
+    assert result["reference"].endswith("프로젝트_기준정보.xlsx")
+    assert len(result["targets"]) == 4
+    assert "프로젝트번호" in result["common_columns"]
+
+
+def test_sync_common_fields_from_reference(tmp_path):
+    result = generate_project_common_samples()
+    reference = result["reference"]
+    targets = result["targets"][:1]
+
+    out = ex.sync_common_fields_from_reference(
+        reference,
+        targets,
+        result["common_columns"],
+        output_dir=tmp_path,
+    )
+
+    assert out["update_count"] > 0
+    assert out["reference_file"] == "프로젝트_기준정보.xlsx"
+    assert len(out["updated_files"]) == 1
+    synced = ex.load_excel_files(out["updated_files"])[0].df
+    assert synced.loc[0, "수주금액"] == "150000000"
+    assert "청구차수" in synced.columns  # 개별 컬럼 보존

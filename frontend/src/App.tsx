@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   collect,
   createGuide,
+  genProjectSamples,
   genSamples,
   getHealth,
   getSampleEmail,
@@ -9,13 +10,13 @@ import {
   saveStyleMail,
   uploadStyleMails,
   sendRequestMail,
+  syncCommonFields,
   trackSubmissions,
-  updateFields,
   type GuideResponse,
   type Health,
   type SendRequestMailResponse,
+  type SyncCommonFieldsResponse,
   type TrackResponse,
-  type UpdateFieldsResponse,
 } from "./api";
 import type { CollectResponse } from "./types";
 
@@ -55,12 +56,11 @@ export default function App() {
   const [reminderSendResult, setReminderSendResult] = useState<SendRequestMailResponse | null>(null);
 
   // 4. 공통 항목 일괄 수정
-  const [updateFilesList, setUpdateFilesList] = useState<File[]>([]);
-  const [targetField, setTargetField] = useState("취합월");
-  const [newValue, setNewValue] = useState("2026-06");
-  const [oldValue, setOldValue] = useState("");
+  const [referenceFile, setReferenceFile] = useState<File | null>(null);
+  const [targetFiles, setTargetFiles] = useState<File[]>([]);
   const [updateLoading, setUpdateLoading] = useState(false);
-  const [updateResult, setUpdateResult] = useState<UpdateFieldsResponse | null>(null);
+  const [updateResult, setUpdateResult] = useState<SyncCommonFieldsResponse | null>(null);
+  const [projectSampleInfo, setProjectSampleInfo] = useState<string | null>(null);
 
   useEffect(() => {
     getHealth().then(setHealth).catch(() => setHealth(null));
@@ -202,16 +202,33 @@ export default function App() {
     }
   }
 
+  async function makeProjectSamples() {
+    setError(null);
+    try {
+      const r = await genProjectSamples();
+      setProjectSampleInfo(
+        `프로젝트 샘플 5개 생성 완료. 기준 파일: ${r.reference.split(/[\\/]/).pop()} / 대상 파일 ${r.targets.length}개`
+      );
+      alert("프로젝트 공통 항목 샘플 5개를 data/samples/project_common 에 생성했습니다.");
+    } catch (e: any) {
+      setError(e?.response?.data?.detail ?? String(e));
+    }
+  }
+
   async function runUpdateFields() {
     setError(null);
-    if (updateFilesList.length === 0) {
-      setError("일괄 수정할 엑셀 파일을 먼저 업로드하세요.");
+    if (!referenceFile) {
+      setError("기준 파일을 먼저 업로드하세요.");
+      return;
+    }
+    if (targetFiles.length === 0) {
+      setError("수정 대상 파일을 1개 이상 업로드하세요.");
       return;
     }
     setUpdateLoading(true);
     setUpdateResult(null);
     try {
-      setUpdateResult(await updateFields({ targetField, newValue, oldValue, files: updateFilesList }));
+      setUpdateResult(await syncCommonFields({ referenceFile, targetFiles }));
     } catch (e: any) {
       setError(e?.response?.data?.detail ?? String(e));
     } finally {
@@ -435,21 +452,21 @@ export default function App() {
           <div className="lane-head">
             <div className="lane-eyebrow"><span className="lane-no">04</span><span className="lane-kicker">수정</span></div>
             <h2 className="lane-title">공통 항목 일괄 수정</h2>
-            <p className="lane-desc">여러 파일의 공통 컬럼을 한 번에 수정 (원본 보존)</p>
+            <p className="lane-desc">기준 파일의 프로젝트 공통 정보로 대상 파일 동기화 (원본 보존)</p>
           </div>
           <div className="lane-body">
             <div className="split">
               <div className="col">
-                <label>수정할 엑셀 파일 업로드</label>
-                <input type="file" accept=".xlsx,.xls" multiple onChange={(e) => setUpdateFilesList(Array.from(e.target.files ?? []))} />
-                {updateFilesList.length > 0 && (<ul className="filelist">{updateFilesList.map((f) => (<li key={f.name}>📄 {f.name}</li>))}</ul>)}
-                <label>대상 컬럼</label>
-                <input value={targetField} onChange={(e) => setTargetField(e.target.value)} />
-                <label>새 값</label>
-                <input value={newValue} onChange={(e) => setNewValue(e.target.value)} />
-                <label>기존 값 필터 (비우면 전체 적용)</label>
-                <input value={oldValue} onChange={(e) => setOldValue(e.target.value)} placeholder="비우면 전체 적용" />
-                <button className="primary block-btn" onClick={runUpdateFields} disabled={updateLoading}>{updateLoading ? "수정 중…" : "업로드 파일 일괄 수정"}</button>
+                <button className="ghost block-btn" onClick={makeProjectSamples}>프로젝트 샘플 5개 생성</button>
+                {projectSampleInfo && <p className="hint">{projectSampleInfo}</p>}
+                <label>기준 파일 업로드 (수정 완료된 최신 파일 1개)</label>
+                <input type="file" accept=".xlsx,.xls" onChange={(e) => setReferenceFile(e.target.files?.[0] ?? null)} />
+                {referenceFile && (<ul className="filelist"><li>📌 {referenceFile.name}</li></ul>)}
+                <label>수정 대상 파일 업로드 (나머지 파일 여러 개)</label>
+                <input type="file" accept=".xlsx,.xls" multiple onChange={(e) => setTargetFiles(Array.from(e.target.files ?? []))} />
+                {targetFiles.length > 0 && (<ul className="filelist">{targetFiles.map((f) => (<li key={f.name}>📄 {f.name}</li>))}</ul>)}
+                <p className="hint">프로젝트번호가 있으면 행별로 매칭하고, 없으면 기준 파일 첫 행의 공통 값을 적용합니다.</p>
+                <button className="primary block-btn" onClick={runUpdateFields} disabled={updateLoading}>{updateLoading ? "동기화 중…" : "기준 파일 값으로 공통 항목 동기화"}</button>
               </div>
               <div className="col">
                 <div className="outbox">
@@ -457,12 +474,23 @@ export default function App() {
                   {updateResult ? (
                     <div className="result">
                       <p className="field-line"><b>변경 셀 {updateResult.update_count}개</b> · 파일 {updateResult.downloads.length}개</p>
+                      <p className="field-line"><b>기준 파일</b> · {updateResult.reference_file}</p>
+                      <p className="field-line"><b>매칭 키</b> · {updateResult.key_column}</p>
+                      <p className="field-line"><b>공통 컬럼</b> · {updateResult.common_columns.join(", ")}</p>
                       <div className="block downloads">
                         {updateResult.downloads.map((href, i) => (<a className="primary" href={href} key={href}>⬇ 수정 파일 {updateResult.downloads.length > 1 ? i + 1 : ""}</a>))}
                       </div>
+                      {updateResult.details.some((d: any) => d.unmatched_keys?.length) && (
+                        <div className="block">
+                          <h4>매칭되지 않은 프로젝트번호</h4>
+                          {updateResult.details.map((d: any) => d.unmatched_keys?.length ? (
+                            <p className="field-line" key={d.file}>{d.file}: {d.unmatched_keys.join(", ")}</p>
+                          ) : null)}
+                        </div>
+                      )}
                     </div>
                   ) : (
-                    <div className="placeholder">파일과 대상 컬럼·값을 입력하고 ‘일괄 수정’을 누르면<br />변경 요약과 수정 파일 다운로드가 여기 표시됩니다.</div>
+                    <div className="placeholder">기준 파일 1개와 수정 대상 파일을 업로드하고 동기화를 누르면<br />공통 컬럼 변경 요약과 수정 파일 다운로드가 표시됩니다.</div>
                   )}
                 </div>
               </div>

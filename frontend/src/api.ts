@@ -27,6 +27,18 @@ export async function genSamples(): Promise<{ email: string; excels: string[] }>
   return data;
 }
 
+export interface ProjectSamplesResponse {
+  common_columns: string[];
+  excels: string[];
+  reference: string;
+  targets: string[];
+}
+
+export async function genProjectSamples(): Promise<ProjectSamplesResponse> {
+  const { data } = await client.post<ProjectSamplesResponse>("/gen-project-samples");
+  return data;
+}
+
 export interface CollectInput {
   subject: string;
   body: string;
@@ -182,5 +194,22 @@ export async function updateFields(input: {
   form.append("old_value", input.oldValue ?? "");
   input.files.forEach((f) => form.append("files", f));
   const { data } = await client.post<UpdateFieldsResponse>("/update-fields", form);
+  return data;
+}
+
+export interface SyncCommonFieldsResponse extends UpdateFieldsResponse {
+  common_columns: string[];
+  key_column: string;
+  reference_file: string;
+}
+
+export async function syncCommonFields(input: {
+  referenceFile: File;
+  targetFiles: File[];
+}): Promise<SyncCommonFieldsResponse> {
+  const form = new FormData();
+  form.append("reference_file", input.referenceFile);
+  input.targetFiles.forEach((f) => form.append("target_files", f));
+  const { data } = await client.post<SyncCommonFieldsResponse>("/sync-common-fields", form);
   return data;
 }

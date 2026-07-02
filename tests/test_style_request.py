@@ -37,7 +37,7 @@ def test_build_style_hint_empty():
 def test_build_style_hint_includes_examples():
     from smart_collect.tools.guide_tools import _build_style_hint
     hint = _build_style_hint([{"snippet": "안녕하세요 협조바랍니다"}])
-    assert "예시 1" in hint
+    assert "style_example_1" in hint
     assert "협조바랍니다" in hint
 
 
@@ -160,6 +160,16 @@ def test_send_request_mail_with_attachment(tmp_path):
     assert "양식.xlsx" in d["attachments"]
 
 
+def test_send_request_mail_rejects_non_excel_attachment():
+    client = TestClient(app)
+    r = client.post(
+        "/api/send-request-mail",
+        data={"to": "a@x.com", "subject": "취합 요청", "body": "양식 작성 부탁드립니다"},
+        files=[("files", ("memo.txt", b"not excel", "text/plain"))],
+    )
+    assert r.status_code == 400
+
+
 def test_send_request_mail_requires_recipient():
     client = TestClient(app)
     r = client.post(
@@ -177,6 +187,35 @@ def test_send_request_mail_no_attachment_ok():
     )
     assert r.status_code == 200
     assert r.json()["attachments"] == []
+
+
+def test_gen_project_samples_endpoint():
+    client = TestClient(app)
+    r = client.post("/api/gen-project-samples")
+    assert r.status_code == 200
+    d = r.json()
+    assert len(d["excels"]) == 5
+    assert d["reference"].endswith("프로젝트_기준정보.xlsx")
+    assert len(d["targets"]) == 4
+
+
+def test_sync_common_fields_endpoint(tmp_path):
+    from smart_collect.sample_data import generate_project_common_samples
+
+    samples = generate_project_common_samples()
+    client = TestClient(app)
+    with open(samples["reference"], "rb") as ref, open(samples["targets"][0], "rb") as target:
+        r = client.post(
+            "/api/sync-common-fields",
+            files=[
+                ("reference_file", ("ref.xlsx", ref, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")),
+                ("target_files", ("target.xlsx", target, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")),
+            ],
+        )
+    assert r.status_code == 200
+    d = r.json()
+    assert d["update_count"] > 0
+    assert d["downloads"]
 
 
 def test_guide_without_style(monkeypatch, tmp_path):

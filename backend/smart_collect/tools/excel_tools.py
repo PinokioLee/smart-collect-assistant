@@ -345,6 +345,102 @@ def update_common_fields(
     }
 
 
+def sync_common_fields_from_reference(
+    reference_file: str,
+    target_files: list[str],
+    common_columns: list[str],
+    *,
+    key_column: str = "프로젝트번호",
+    output_dir: str | Path | None = None,
+) -> dict:
+    """기준 파일의 공통 컬럼 값을 대상 파일들에 동기화한다.
+
+    - 기준/대상에 key_column 이 있으면 같은 프로젝트번호 행끼리 매칭한다.
+    - key_column 이 없거나 매칭할 수 없으면 기준 파일 첫 행 값을 전체 대상 행에 적용한다.
+    - 대상 파일의 개별 컬럼은 보존한다.
+    - 원본은 보존하고 결과는 별도 파일(_synced)로 저장한다.
+    """
+    reference = load_excel_files([reference_file])[0]
+    targets = load_excel_files(target_files)
+    ref_df = reference.df.copy()
+    if ref_df.empty:
+        raise ValueError("기준 파일에 데이터 행이 없습니다.")
+
+    available_common = [c for c in common_columns if c in ref_df.columns]
+    if not available_common:
+        raise ValueError("기준 파일에 동기화할 공통 컬럼이 없습니다.")
+
+    use_key = key_column in ref_df.columns
+    ref_by_key: dict[str, pd.Series] = {}
+    if use_key:
+        for _, row in ref_df.iterrows():
+            key = str(row.get(key_column, "")).strip()
+            if key and key.lower() != "nan":
+                ref_by_key[key] = row
+    fallback_row = ref_df.iloc[0]
+
+    out_base = Path(output_dir) if output_dir else (DATA_DIR / "updated_files")
+    out_base.mkdir(parents=True, exist_ok=True)
+
+    updated_files: list[str] = []
+    details: list[dict] = []
+    error_list: list[dict] = []
+    total_updates = 0
+
+    for target in targets:
+        df = target.df.copy()
+        changed = 0
+        unmatched_keys: list[str] = []
+        if df.empty:
+            error_list.append({"file": target.name, "reason": "대상 파일에 데이터 행이 없습니다."})
+            continue
+
+        for col in available_common:
+            if col not in df.columns:
+                df[col] = ""
+
+        for idx, row in df.iterrows():
+            source_row = fallback_row
+            if use_key and key_column in df.columns:
+                key = str(row.get(key_column, "")).strip()
+                if key and key.lower() != "nan":
+                    matched = ref_by_key.get(key)
+                    if matched is not None:
+                        source_row = matched
+                    else:
+                        unmatched_keys.append(key)
+                        continue
+            for col in available_common:
+                new_value = "" if pd.isna(source_row[col]) else str(source_row[col])
+                old_value = "" if pd.isna(df.at[idx, col]) else str(df.at[idx, col])
+                if old_value != new_value:
+                    df.at[idx, col] = new_value
+                    changed += 1
+
+        out_path = out_base / f"{Path(target.name).stem}_synced.xlsx"
+        df.to_excel(out_path, index=False, engine="openpyxl")
+        updated_files.append(str(out_path))
+        details.append(
+            {
+                "file": target.name,
+                "updated_cells": changed,
+                "output": str(out_path),
+                "unmatched_keys": sorted(set(unmatched_keys)),
+            }
+        )
+        total_updates += changed
+
+    return {
+        "updated_files": updated_files,
+        "update_count": total_updates,
+        "details": details,
+        "error_list": error_list,
+        "common_columns": available_common,
+        "key_column": key_column,
+        "reference_file": reference.name,
+    }
+
+
 def generate_error_report(
     result: ExcelValidationResult, output_path: str | Path
 ) -> str:

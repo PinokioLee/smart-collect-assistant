@@ -15,6 +15,7 @@ data/error_reports/*
 data/updated_files/*
 data/uploads/
 data/samples/
+data/style_samples/
 !data/merged_files/.gitkeep
 !data/error_reports/.gitkeep
 # 단, 실측 벤치마크 지표(JSON)는 추적 (발표 근거)

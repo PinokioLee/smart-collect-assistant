@@ -10,10 +10,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..config import ROOT_DIR
+from ..config import DATA_DIR, ROOT_DIR
 
 REFERENCE_DIR = ROOT_DIR / "docs" / "reference"
-STYLE_DIR = REFERENCE_DIR / "style_samples"
+STYLE_DIR = DATA_DIR / "style_samples"
 
 
 def retrieve_style_samples(query: str, top_k: int = 3) -> list[dict]:
