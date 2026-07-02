@@ -208,7 +208,7 @@ export default function App() {
 
       {error && <p className="error">⚠ {error}</p>}
 
-      <div className="board">
+      <div className="screen">
         {/* ===== 01 요청 ===== */}
         <section className="lane">
           <div className="lane-head">
@@ -343,6 +343,9 @@ export default function App() {
           </div>
         </section>
 
+      </div>
+
+      <div className="screen">
         {/* ===== 03 추적 ===== */}
         <section className="lane">
           <div className="lane-head">

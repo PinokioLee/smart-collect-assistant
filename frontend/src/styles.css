@@ -32,15 +32,14 @@ body {
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
   line-height: 1.55;
-  overflow: hidden; /* 페이지 전체 스크롤 제거 — 각 레인 내부만 스크롤 */
 }
 
-/* ---------- 전체 셸: 화면 높이를 꽉 채우는 세로 플렉스 ---------- */
+/* ---------- 전체 셸: 두 개의 화면(각 뷰포트 높이)을 세로로 ---------- */
 .shell {
-  height: 100vh;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
-  padding: 18px 22px 20px;
+  padding: 16px 22px 26px;
   gap: 14px;
 }
 
@@ -78,15 +77,15 @@ body {
   background: var(--bad-soft); border: 1px solid #f3cfca; padding: 10px 14px; border-radius: 10px;
 }
 
-/* ---------- 파이프라인 보드: 가로 4열, 남은 높이 전부 사용 ---------- */
-.board {
-  flex: 1 1 auto;
-  min-height: 0;
+/* ---------- 화면: 2열(좌·우 레인), 각 화면이 뷰포트 높이를 채움 ---------- */
+.screen {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr;
+  grid-template-rows: 1fr;
   gap: 14px;
+  height: calc(100vh - 96px);
 }
+.topbar { position: sticky; top: 0; z-index: 10; background: var(--canvas); padding: 4px 0 10px; box-shadow: 0 1px 0 var(--line); }
 
 /* ---------- 레인(스테이션): 화면 높이, 내부 스크롤 ---------- */
 .lane {
@@ -271,9 +270,8 @@ pre {
 
 /* 노트북(≈1024px+)까지 2×2 한 화면 유지. 태블릿/모바일(≤1023px)만 세로 스택 */
 @media (max-width: 1023px) {
-  body { overflow: auto; }
-  .shell { height: auto; min-height: 100vh; }
-  .board { grid-template-columns: 1fr; grid-template-rows: none; }
-  .lane { min-height: 62vh; }
+  .shell { min-height: 100vh; }
+  .screen { height: auto; grid-template-columns: 1fr; grid-template-rows: none; }
+  .lane { min-height: 60vh; }
   .split, .split.wide-left { grid-template-columns: 1fr; }
 }
