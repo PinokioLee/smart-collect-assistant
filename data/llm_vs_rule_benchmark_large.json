@@ -1,0 +1,48 @@
+{
+  "dataset": {
+    "files": 8,
+    "total_rows": 130,
+    "ground_truth_errors": 26
+  },
+  "llm_direct_validation": {
+    "runs": 3,
+    "ground_truth_errors": 26,
+    "detected_count_mean": 26,
+    "detected_count_stdev": 0.0,
+    "precision_mean": 1.0,
+    "recall_mean": 1.0,
+    "f1_mean": 1.0,
+    "f1_stdev": 0.0,
+    "time_mean_ms": 3664.6,
+    "time_stdev_ms": 195.9,
+    "per_run_detected_counts": [
+      26,
+      26,
+      26
+    ],
+    "per_run_f1": [
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  "rule_based_validation": {
+    "detection": {
+      "ground_truth_errors": 26,
+      "detected": 26,
+      "true_positive": 26,
+      "false_positive": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "reproducibility": {
+      "runs": 10,
+      "error_count_mean": 26,
+      "error_count_stdev": 0.0,
+      "time_mean_ms": 21.05,
+      "time_stdev_ms": 0.786
+    }
+  }
+}
