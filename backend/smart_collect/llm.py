@@ -69,6 +69,121 @@ def _extract_json(text: str) -> Optional[dict]:
         return None
 
 
+_PLAN_SYSTEM_PROMPT = """당신은 엑셀 취합 워크플로우의 Supervisor Agent입니다.
+메일에서 추출한 요구사항과 실제 업로드된 엑셀의 컬럼을 보고, 검증 전략을 '계획'하세요.
+당신은 검증을 직접 수행하지 않습니다. 규칙 엔진(결정론 코드)이 실제 검증을 하며,
+당신은 어떤 점을 주의해서 검증할지 판단·설명하는 역할입니다.
+
+JSON 으로만 응답하세요:
+- strategy: "strict" | "balanced" | "loose" (양식 드리프트 위험이 크면 balanced/loose 권장)
+- required_focus: 반드시 필수로 봐야 할 컬럼명 배열
+- drift_columns: 메일엔 있으나 실제 파일에 없는 컬럼(과잉 필수규칙 위험) 배열
+- risks: 예상 리스크 한 줄 문자열 배열 (예: "긴급도 코드값 표기 흔들림 가능")
+- rationale: 이 계획을 택한 이유 한 줄
+JSON 외 텍스트는 출력하지 마세요."""
+
+
+def plan_collection(
+    req: "ExtractedRequirements", actual_columns: list[str]
+) -> Optional[dict]:
+    """Supervisor(LLM) 실행 계획. Azure 불가 시 None(휴리스틱 폴백)."""
+    content = chat(
+        [
+            {"role": "system", "content": _PLAN_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": (
+                    f"요청 제목: {req.request_title}\n제출 기한: {req.deadline}\n"
+                    f"메일에서 추출한 작성 항목: {', '.join(req.required_fields) or '(없음)'}\n"
+                    f"주의사항: {'; '.join(req.cautions) or '(없음)'}\n"
+                    f"실제 업로드 엑셀 컬럼: {', '.join(actual_columns) or '(없음)'}"
+                ),
+            },
+        ]
+    )
+    if content is None:
+        return None
+    data = _extract_json(content)
+    if not isinstance(data, dict):
+        return None
+    return {
+        "strategy": data.get("strategy") or "balanced",
+        "required_focus": data.get("required_focus") or [],
+        "drift_columns": data.get("drift_columns") or [],
+        "risks": data.get("risks") or [],
+        "rationale": data.get("rationale") or "",
+    }
+
+
+_CORRECTION_SYSTEM_PROMPT = """당신은 엑셀 검증 오류를 '교정 제안'하는 Self-Correction Agent입니다.
+당신은 값을 직접 확정하지 않습니다. 당신의 제안은 결정론 코드가 허용값·날짜형식으로
+재검증한 뒤에만 채택됩니다. 따라서 정직하게, 확신이 없으면 제안하지 마세요.
+
+규칙:
+- 날짜 형식 오류: 값을 YYYY-MM-DD 로 정규화한 제안을 내세요. 날짜로 해석 불가하면 제안 생략.
+- 허용되지 않은 코드값: 주어진 allowed 목록 중 의미가 가장 가까운 값 하나로 제안하세요.
+  의미가 불명확하면 제안하지 마세요(빈 문자열).
+- 필수값 누락·중복은 데이터를 지어내야 하므로 절대 제안하지 마세요.
+
+입력은 오류 목록입니다. 각 오류에 대해 JSON 배열로만 응답하세요:
+[{"id": <오류 id>, "suggested": "<제안값 또는 빈 문자열>", "rationale": "<한 줄 근거>"}]
+JSON 외 텍스트는 출력하지 마세요."""
+
+
+def propose_corrections(errors: list[dict]) -> Optional[dict[int, dict]]:
+    """LLM 이 오류별 교정값을 '제안'한다. Azure 불가 시 None.
+
+    errors: [{id, error_type, column, value, allowed:[...]}]
+    반환: {id: {"suggested": str, "rationale": str}}
+    """
+    if not errors:
+        return {}
+    lines = []
+    for e in errors:
+        allowed = e.get("allowed") or []
+        lines.append(
+            f'{{"id": {e["id"]}, "error_type": "{e["error_type"]}", '
+            f'"column": "{e.get("column")}", "value": "{e.get("value")}", '
+            f'"allowed": {allowed}}}'
+        )
+    content = chat(
+        [
+            {"role": "system", "content": _CORRECTION_SYSTEM_PROMPT},
+            {"role": "user", "content": "[\n" + ",\n".join(lines) + "\n]"},
+        ]
+    )
+    if content is None:
+        return None
+    arr = _extract_json_array(content)
+    if arr is None:
+        return None
+    out: dict[int, dict] = {}
+    for item in arr:
+        try:
+            out[int(item["id"])] = {
+                "suggested": str(item.get("suggested", "")).strip(),
+                "rationale": str(item.get("rationale", "")).strip(),
+            }
+        except (KeyError, TypeError, ValueError):
+            continue
+    return out
+
+
+def _extract_json_array(text: str) -> Optional[list]:
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.strip("`")
+        text = text[text.find("["):]
+    start, end = text.find("["), text.rfind("]")
+    if start == -1 or end == -1:
+        return None
+    try:
+        data = json.loads(text[start:end + 1])
+        return data if isinstance(data, list) else None
+    except json.JSONDecodeError:
+        return None
+
+
 def analyze_email_with_llm(subject: str, body: str) -> Optional[ExtractedRequirements]:
     """Azure OpenAI 로 메일을 분석한다. 불가하면 None."""
     content = chat([

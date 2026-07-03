@@ -66,8 +66,9 @@ def rules():
 
 
 def test_self_correction_reduces_errors(loaded, rules):
+    # use_llm=False: 결정론 경로를 고정해 오프라인·재현 가능하게 검증
     result = ex.validate_excel_data(loaded, rules)
-    sc, corrected, log = run_self_correction(loaded, result, rules)
+    sc, corrected, log = run_self_correction(loaded, result, rules, use_llm=False)
     assert sc.accepted
     assert sc.errors_after < sc.errors_before
     assert sc.applied_corrections == 2  # 날짜 + 코드값 (품질팀 4행)
@@ -78,7 +79,7 @@ def test_self_correction_preserves_originals(loaded, rules):
     """원본 DataFrame 은 변경되지 않아야 한다(원본 보존)."""
     before = loaded[2].df.at[2, "긴급도"]  # 품질팀 데이터 3행(idx 2)
     result = ex.validate_excel_data(loaded, rules)
-    run_self_correction(loaded, result, rules)
+    run_self_correction(loaded, result, rules, use_llm=False)
     after = loaded[2].df.at[2, "긴급도"]
     assert before == after == "매우 급함"
 

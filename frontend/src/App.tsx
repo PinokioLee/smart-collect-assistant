@@ -237,6 +237,7 @@ export default function App() {
   }
 
   const vr = result?.validation_result;
+  const sc = result?.self_correction;
 
   return (
     <div className="shell">
@@ -245,7 +246,7 @@ export default function App() {
           <div className="brand-glyph">SC</div>
           <div>
             <h1 className="brand-name">Smart Collect</h1>
-            <p className="brand-thesis">취합 요청 메일부터 엑셀 검증·병합까지, 한 흐름으로</p>
+            <p className="brand-thesis">메일 이해·검증전략·자가교정을 LLM이 판단하고 코드가 검증하는 멀티에이전트 세션</p>
           </div>
         </div>
         {health && (
@@ -380,10 +381,61 @@ export default function App() {
                       <div className="block downloads">
                         {result.downloads.merged && (<a className="primary" href={result.downloads.merged}>⬇ 취합 엑셀</a>)}
                         {result.downloads.error && (<a className="ghost" href={result.downloads.error}>⬇ 오류 보고서</a>)}
+                        {result.downloads.trace_md && (<a className="ghost" href={result.downloads.trace_md}>⬇ 추론 트레이스(.md)</a>)}
+                        {result.downloads.trace_json && (<a className="ghost" href={result.downloads.trace_json}>⬇ 트레이스(.json)</a>)}
                       </div>
+
+                      {result.supervisor_plan && result.supervisor_plan.strategy && (
+                        <div className="block plan-box">
+                          <h4>🧠 Supervisor 판단 (LLM 계획)</h4>
+                          <p className="field-line"><b>전략</b> · {result.supervisor_plan.strategy}
+                            {result.supervisor_plan.source === "heuristic" && " (휴리스틱)"}</p>
+                          {result.supervisor_plan.rationale && (
+                            <p className="field-line"><b>근거</b> · {result.supervisor_plan.rationale}</p>
+                          )}
+                          {result.supervisor_plan.risks && result.supervisor_plan.risks.length > 0 && (
+                            <p className="field-line"><b>사전 식별 리스크</b> · {result.supervisor_plan.risks.join(" / ")}</p>
+                          )}
+                        </div>
+                      )}
+
+                      {sc && sc.corrections.length > 0 && (
+                        <div className="block">
+                          <h4>자가교정 (LLM 제안 → 결정론 검증 → 채택)</h4>
+                          <p className="field-line">
+                            제안 {sc.applied_corrections}건 중 LLM {sc.corrections.filter((c) => c.source === "llm").length}건 ·
+                            규칙 {sc.corrections.filter((c) => c.source === "rule").length}건 ·
+                            재검증 오류 {sc.errors_before}→{sc.errors_after}행 {sc.accepted ? "(채택)" : "(기각)"}
+                          </p>
+                          <div className="table-wrap">
+                            <table className="errtable">
+                              <thead><tr><th>행</th><th>컬럼</th><th>교정</th><th>주체</th><th>LLM 근거</th></tr></thead>
+                              <tbody>
+                                {sc.corrections.map((c, i) => (
+                                  <tr key={i}>
+                                    <td>{c.row}</td><td>{c.column}</td>
+                                    <td><code>{c.before}</code> → <code>{c.after}</code></td>
+                                    <td><span className={`actor ${c.source === "llm" ? "actor-llm" : "actor-rule"}`}>{c.source === "llm" ? "LLM" : "규칙"}</span></td>
+                                    <td>{c.rationale ?? "-"}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+
                       <div className="block">
-                        <h4>에이전트 실행 흐름</h4>
-                        <div className="flow">{result.agent_handoff_history.map((h, i) => (<span className="node" key={i}>{h.split(":")[1] ?? h}</span>))}</div>
+                        <h4>에이전트 추론 타임라인 <span className="opt">· 시연·발표 증거</span></h4>
+                        <ol className="trace">
+                          {result.reasoning_steps.map((s) => (
+                            <li className="trace-step" key={s.seq}>
+                              <span className={`actor ${s.actor === "llm" ? "actor-llm" : "actor-rule"}`}>{s.actor === "llm" ? "🧠 LLM" : "⚙️ 규칙"}</span>
+                              <span className="trace-phase">{s.phase}</span>
+                              <span className="trace-decision">{s.decision}</span>
+                            </li>
+                          ))}
+                        </ol>
                       </div>
                     </div>
                   ) : (

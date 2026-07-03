@@ -59,16 +59,29 @@ def _state_to_dict(state: AgentState) -> dict:
         "validation_result": state.validation_result.model_dump()
         if state.validation_result
         else None,
+        "self_correction": state.self_correction.model_dump()
+        if state.self_correction
+        else None,
+        "supervisor_plan": state.supervisor_plan,
         "merged_file": state.merged_file,
         "error_report": state.error_report,
         "result_summary": state.result_summary,
         "agent_handoff_history": state.agent_handoff_history,
+        # 에이전트 추론 과정 (화면 타임라인 + 시연 증거)
+        "reasoning_log": state.reasoning_log,
+        "reasoning_steps": [s.model_dump() for s in state.reasoning_steps],
         "downloads": {
             "merged": f"/api/download/{state.request_id}/merged"
             if state.merged_file
             else None,
             "error": f"/api/download/{state.request_id}/error"
             if state.error_report
+            else None,
+            "trace_md": f"/api/download-trace/{state.request_id}/md"
+            if state.trace_files.get("md")
+            else None,
+            "trace_json": f"/api/download-trace/{state.request_id}/json"
+            if state.trace_files.get("json")
             else None,
         },
     }
@@ -479,6 +492,18 @@ def download(request_id: str, kind: str) -> FileResponse:
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         filename=path.name,
     )
+
+
+@app.get("/api/download-trace/{request_id}/{kind}")
+def download_trace(request_id: str, kind: str) -> FileResponse:
+    """에이전트 실행 트레이스 증거 파일 다운로드 (md|json)."""
+    if kind not in ("md", "json"):
+        raise HTTPException(status_code=400, detail="kind 은 md 또는 json")
+    path = DATA_DIR / "traces" / f"{request_id}.{kind}"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="트레이스 파일 없음")
+    media = "text/markdown" if kind == "md" else "application/json"
+    return FileResponse(path, media_type=media, filename=path.name)
 
 
 if __name__ == "__main__":

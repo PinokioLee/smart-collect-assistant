@@ -30,6 +30,15 @@ def node_requirement_analysis(state: AgentState, *, prefer_llm: bool = True) -> 
         prefer_llm=prefer_llm,
     )
     state.extracted_requirements = req
+    from .config import settings as _settings
+
+    used_llm = prefer_llm and _settings.azure_ready
+    state.step(
+        "ANALYZE",
+        f"메일에서 작성항목 {len(req.required_fields)}개·마감 '{req.deadline or '미확인'}' 추출",
+        actor="llm" if used_llm else "rule",
+        detail={"fields": req.required_fields, "deadline": req.deadline},
+    )
     trace_execution(
         state.request_id,
         "RequirementAnalysisNode",
@@ -39,8 +48,8 @@ def node_requirement_analysis(state: AgentState, *, prefer_llm: bool = True) -> 
     return state
 
 
-def node_supervisor_plan(state: AgentState) -> AgentState:
-    """Supervisor Agent: Foresight 계획 + ToT 검증 규칙 선택 + RAG 분기."""
+def node_supervisor_plan(state: AgentState, *, use_llm: bool = True) -> AgentState:
+    """Supervisor Agent: LLM 실행 계획(판단) + ToT 검증 규칙 선택(결정론) + RAG 분기."""
     state.handoff("Supervisor Agent", "PlanningNode")
     req = state.extracted_requirements
     if req is None:
@@ -52,8 +61,9 @@ def node_supervisor_plan(state: AgentState) -> AgentState:
         "[PLAN] 5단계 계획 — 1)규칙선택(ToT) 2)검증 3)자가교정(Self-Refine) "
         "4)정상병합 5)보고서. 마감일/필수컬럼/코드값 기준 사전 점검."
     )
+    state.step("PLAN", "5단계 실행 계획 수립 (규칙선택→검증→자가교정→병합→보고)")
 
-    # ToT: 실제 업로드 엑셀 헤더를 읽어 후보 규칙 3개를 정합성으로 평가·선택
+    # 실제 업로드 엑셀 헤더를 읽는다 (LLM 계획 + ToT 평가 공통 입력)
     actual_columns: set[str] = set()
     try:
         loaded = ex.load_excel_files(state.uploaded_excel_files)
@@ -63,6 +73,37 @@ def node_supervisor_plan(state: AgentState) -> AgentState:
     except Exception:  # noqa: BLE001 - 파일 없으면 ToT 없이 휴리스틱
         pass
 
+    # LLM Supervisor 판단: 검증 전략·리스크를 '계획'(검증은 코드가 결정론적으로 수행)
+    plan = None
+    if use_llm:
+        try:
+            from .llm import plan_collection
+
+            plan = plan_collection(req, sorted(actual_columns))
+        except Exception:  # noqa: BLE001 - 폴백 보장
+            plan = None
+    if plan:
+        state.supervisor_plan = plan
+        risks = "; ".join(plan.get("risks", [])) or "특이 리스크 없음"
+        state.reason(
+            f"[PLAN·LLM] 전략={plan.get('strategy')} · 리스크: {risks} · "
+            f"근거: {plan.get('rationale', '')}"
+        )
+        state.step(
+            "PLAN",
+            f"LLM 검증 전략 판단: {plan.get('strategy')} — {plan.get('rationale', '')}",
+            actor="llm",
+            detail={
+                "strategy": plan.get("strategy"),
+                "risks": plan.get("risks", []),
+                "drift_columns": plan.get("drift_columns", []),
+            },
+        )
+    else:
+        state.supervisor_plan = {"strategy": "balanced", "source": "heuristic"}
+        state.step("PLAN", "Azure 미사용 → 휴리스틱 계획으로 진행", actor="rule")
+
+    # ToT: 실제 업로드 엑셀 헤더로 후보 규칙 3개를 정합성 점수로 평가·선택 (결정론)
     if actual_columns:
         rule, tot_log = select_rules_with_tot(
             req, "\n".join(req.cautions), actual_columns
@@ -70,6 +111,14 @@ def node_supervisor_plan(state: AgentState) -> AgentState:
         state.validation_rules = rule
         for line in tot_log:
             state.reason(line)
+        state.step(
+            "BRANCH", "ToT 검증 규칙 후보 3개 생성 (Strict/Balanced/Loose)"
+        )
+        state.step(
+            "SELECT",
+            f"정합성 게이트로 규칙 확정 · 필수컬럼={rule.required_columns}",
+            detail={"required_columns": rule.required_columns},
+        )
     else:
         state.validation_rules = build_validation_rules(req)
 
@@ -80,6 +129,7 @@ def node_supervisor_plan(state: AgentState) -> AgentState:
         output_summary={
             "required_columns": state.validation_rules.required_columns,
             "rag_required": state.rag_required,
+            "llm_plan": bool(plan),
         },
     )
     return state
@@ -117,6 +167,12 @@ def node_excel_validation(state: AgentState) -> AgentState:
         f"[VALIDATE] 규칙기반 4종 검증 — {vr.total_rows}행 중 오류 {vr.error_rows}행 "
         f"({', '.join(vr.error_types) or '오류 없음'}). 결정론적 → 재현성 보장"
     )
+    state.step(
+        "VALIDATE",
+        f"규칙기반 4종 검증 — {vr.total_rows}행 중 오류 {vr.error_rows}행 (결정론)",
+        detail={"total_rows": vr.total_rows, "error_rows": vr.error_rows,
+                "error_types": vr.error_types},
+    )
     trace_execution(
         state.request_id,
         "ExcelValidationNode",
@@ -128,8 +184,11 @@ def node_excel_validation(state: AgentState) -> AgentState:
     return state
 
 
-def node_self_correction(state: AgentState) -> AgentState:
-    """Self-Correction Agent: 자동 교정 가능한 오류를 Self-Refine 루프로 처리."""
+def node_self_correction(state: AgentState, *, use_llm: bool = True) -> AgentState:
+    """Self-Correction Agent: 자동 교정 가능한 오류를 Self-Refine 루프로 처리.
+
+    use_llm=True 이고 Azure 준비됨이면 LLM 이 교정값을 제안하고 코드가 검증한다.
+    """
     state.handoff("Self-Correction Agent", "SelfCorrectionNode")
     result = state.validation_result
     rules = state.validation_rules
@@ -137,10 +196,39 @@ def node_self_correction(state: AgentState) -> AgentState:
     if result is None or rules is None or not loaded:
         return state
 
-    sc, corrected_files, log = run_self_correction(loaded, result, rules)
+    sc, corrected_files, log = run_self_correction(loaded, result, rules, use_llm=use_llm)
     state.self_correction = sc
     for line in log:
         state.reason(line)
+
+    # 구조화 스텝: CRITIQUE → PROPOSE → REVISE(검증통과 교정) → RE-VALIDATE
+    llm_count = sum(1 for c in sc.corrections if c.source == "llm")
+    state.step(
+        "CRITIQUE",
+        f"교정 가능 후보 {sc.fixable_errors}건 선별 (날짜형식·코드값) · "
+        f"필수값누락·중복 제외",
+        detail={"fixable": sc.fixable_errors},
+    )
+    if sc.corrections:
+        state.step(
+            "PROPOSE·VERIFY",
+            f"교정 {sc.applied_corrections}건 적용 "
+            f"(LLM 제안 {llm_count}건 · 규칙 {sc.applied_corrections - llm_count}건, "
+            f"모두 결정론 게이트 통과)",
+            actor="llm" if llm_count else "rule",
+            detail={
+                "applied": sc.applied_corrections,
+                "llm": llm_count,
+                "corrections": [c.model_dump() for c in sc.corrections],
+            },
+        )
+    state.step(
+        "RE-VALIDATE",
+        f"재검증 오류 {sc.errors_before}→{sc.errors_after}행 "
+        f"({'채택' if sc.accepted else '기각·원본 유지'})",
+        detail={"before": sc.errors_before, "after": sc.errors_after,
+                "accepted": sc.accepted},
+    )
 
     if sc.accepted:
         # 교정 채택 → 병합/오류보고서는 교정본 + 재검증 결과 기준
@@ -171,6 +259,8 @@ def node_merge(state: AgentState) -> AgentState:
     path, rows = ex.merge_valid_rows(loaded, result, out, add_metadata=True)
     state.merged_file = path
     state.merged_rows = rows
+    state.step("MERGE", f"정상 {rows}행 병합 → 취합 엑셀 생성 (원본 보존)",
+               detail={"merged_rows": rows})
     trace_execution(
         state.request_id, "ExcelMergeNode", output_summary={"merged_rows": rows}
     )
@@ -186,6 +276,8 @@ def node_error_report(state: AgentState) -> AgentState:
         return state
     out = ERROR_DIR / f"{state.request_id}_error_report.xlsx"
     state.error_report = ex.generate_error_report(result, out)
+    state.step("REPORT", f"잔여 오류 {len(result.error_details)}건 → 오류 보고서 생성",
+               detail={"error_count": len(result.error_details)})
     trace_execution(
         state.request_id,
         "ErrorReportNode",
@@ -199,6 +291,14 @@ def node_report(state: AgentState) -> AgentState:
     state.handoff("Report Agent", "ReportNode")
     state.result_summary = generate_result_summary(state)
     state.current_stage = "completed"
+    state.step("DONE", "최종 요약 생성 · 세션 완료")
+    # 실행 트레이스 증거 파일 저장 (시연·발표용)
+    try:
+        from .tools.trace_tools import write_execution_trace
+
+        state.trace_files = write_execution_trace(state)
+    except Exception:  # noqa: BLE001 - 트레이스 실패는 본 흐름에 영향 없음
+        pass
     trace_execution(state.request_id, "ReportNode", output_summary={"status": "completed"})
     return state
 
@@ -223,9 +323,9 @@ def run_collection(
     trace_execution(request_id, "StartNode", input_summary={"files": len(excel_files)})
 
     state = node_requirement_analysis(state, prefer_llm=prefer_llm)
-    state = node_supervisor_plan(state)
+    state = node_supervisor_plan(state, use_llm=prefer_llm)
     state = node_excel_validation(state)
-    state = node_self_correction(state)
+    state = node_self_correction(state, use_llm=prefer_llm)
     state = node_merge(state)
     state = node_error_report(state)
     state = node_report(state)

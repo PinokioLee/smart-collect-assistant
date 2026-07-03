@@ -64,6 +64,25 @@ class Correction(BaseModel):
     before: str
     after: str
     method: str  # 날짜정규화 / 코드값매핑
+    source: str = "rule"  # 판단 주체: llm(LLM 제안) / rule(결정론 폴백)
+    rationale: Optional[str] = None  # LLM 이 제안한 경우 근거(한 줄)
+    verified: bool = True  # 결정론 게이트(허용값/날짜형식) 통과 여부
+
+
+class ReasoningStep(BaseModel):
+    """에이전트 실행 1스텝의 구조화 로그 — 시연/발표 증거용.
+
+    reasoning_log(문자열)와 별개로, 화면 타임라인·트레이스 파일에서
+    '어느 에이전트가 / 어떤 국면에서 / 무엇을 / 무엇으로 판단했는지'를 담는다.
+    """
+
+    seq: int
+    agent: str          # 예: Supervisor Agent
+    node: str           # 예: PlanningNode
+    phase: str          # PLAN / BRANCH / EVALUATE / SELECT / VALIDATE / CRITIQUE / PROPOSE / REVISE / RE-VALIDATE / ACCEPT / REPORT
+    decision: str       # 사람이 읽는 한 줄 판단 요약
+    actor: str = "rule"  # 판단 주체: llm / rule
+    detail: dict[str, Any] = Field(default_factory=dict)
 
 
 class SelfCorrectionResult(BaseModel):
@@ -92,6 +111,8 @@ class AgentState(BaseModel):
     # 분석 결과
     extracted_requirements: Optional[ExtractedRequirements] = None
     validation_rules: Optional[ValidationRule] = None
+    # Supervisor(LLM) 의 실행 계획·리스크 판단 (에이전틱 계획 단계)
+    supervisor_plan: Optional[dict[str, Any]] = None
 
     # RAG (선택)
     rag_required: bool = False
@@ -107,6 +128,10 @@ class AgentState(BaseModel):
 
     # 고수준 추론 로그 (ToT / Self-Correction / Planning) — 시연 영상·보고서용
     reasoning_log: list[str] = Field(default_factory=list)
+    # 구조화 추론 스텝 — 화면 타임라인 + 트레이스 증거 파일용
+    reasoning_steps: list[ReasoningStep] = Field(default_factory=list)
+    # 실행 트레이스 증거 파일 경로 (data/traces/{request_id}.json|.md)
+    trace_files: dict[str, str] = Field(default_factory=dict)
 
     # 결과
     result_summary: Optional[str] = None
@@ -131,3 +156,24 @@ class AgentState(BaseModel):
     def reason(self, line: str) -> None:
         """고수준 추론 로그 1줄 기록 (PLAN/BRANCH/EVALUATE/CRITIQUE/REVISE 등)."""
         self.reasoning_log.append(line)
+
+    def step(
+        self,
+        phase: str,
+        decision: str,
+        *,
+        actor: str = "rule",
+        detail: Optional[dict[str, Any]] = None,
+    ) -> None:
+        """구조화 추론 스텝 1건 기록 (현재 agent/node 기준). 화면·트레이스 증거용."""
+        self.reasoning_steps.append(
+            ReasoningStep(
+                seq=len(self.reasoning_steps) + 1,
+                agent=self.current_agent or "-",
+                node=self.current_node or "-",
+                phase=phase,
+                decision=decision,
+                actor=actor,
+                detail=detail or {},
+            )
+        )
