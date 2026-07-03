@@ -139,18 +139,24 @@ export default function App() {
 
   async function run() {
     setError(null);
-    if (!subject.trim() || !body.trim()) {
-      setError("검증 기준을 분석하려면 1단계의 취합 요청 제목/본문이 필요합니다.");
-      return;
-    }
     if (files.length === 0) {
       setError("회신받은 제출 엑셀을 1개 이상 업로드하세요.");
       return;
     }
+    // 01 제목/본문이 비어 있으면 내장 샘플 메일을 자동으로 불러와 그대로 사용
+    let subj = subject;
+    let bod = body;
+    if (!subj.trim() || !bod.trim()) {
+      const s = await getSampleEmail();
+      subj = s.subject;
+      bod = s.body;
+      setSubject(s.subject);
+      setBody(s.body);
+    }
     setLoading(true);
     setResult(null);
     try {
-      const res = await collect({ subject, body, useGraph: true, useLlm: true, files });
+      const res = await collect({ subject: subj, body: bod, useGraph: true, useLlm: true, files });
       setResult(res);
     } catch (e: any) {
       setError(e?.response?.data?.detail ?? String(e));
@@ -342,7 +348,9 @@ export default function App() {
                 <label>회신받은 제출 엑셀 업로드</label>
                 <input type="file" accept=".xlsx,.xls" multiple onChange={(e) => setFiles(Array.from(e.target.files ?? []))} />
                 {files.length > 0 && (<ul className="filelist">{files.map((f) => (<li key={f.name}>📄 {f.name}</li>))}</ul>)}
-                <button className="primary block-btn" onClick={run} disabled={loading}>{loading ? "처리 중…" : "검증 · 병합 실행"}</button>
+                <p className="hint">01 제목/본문이 비어 있으면 내장 샘플 메일을 자동으로 불러와 실행합니다. LLM 판단이 포함돼 약 8~12초 걸립니다.</p>
+                <button className="primary block-btn" onClick={run} disabled={loading}>{loading ? "처리 중… (LLM 판단 포함, 최대 15초)" : "검증 · 병합 실행"}</button>
+                {error && <p className="error inline-err">⚠ {error}</p>}
               </div>
               <div className="col">
                 <div className="outbox">

@@ -76,6 +76,7 @@ body {
   color: var(--bad); font-size: 13px; margin: 0; font-weight: 600;
   background: var(--bad-soft); border: 1px solid #f3cfca; padding: 10px 14px; border-radius: 10px;
 }
+.inline-err { margin-top: 8px; font-size: 12px; padding: 8px 11px; }
 
 /* ---------- 화면: 2열(좌·우 레인), 각 화면이 뷰포트 높이를 채움 ---------- */
 .screen {
