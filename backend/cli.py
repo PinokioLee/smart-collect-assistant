@@ -31,7 +31,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from smart_collect.config import SAMPLE_DIR, settings  # noqa: E402
 from smart_collect.pipeline import run_collection  # noqa: E402
-from smart_collect.sample_data import MOCK_EMAIL, generate_samples  # noqa: E402
+from smart_collect.sample_data import (  # noqa: E402
+    MOCK_EMAIL,
+    generate_hard_samples,
+    generate_samples,
+)
 
 _CONSOLE_TRANSLATION = str.maketrans(
     {
@@ -56,12 +60,21 @@ def _new_request_id() -> str:
     return "REQ-" + datetime.now().strftime("%Y%m%d-%H%M%S")
 
 
-def cmd_gen_samples(_args: argparse.Namespace) -> int:
-    result = generate_samples()
-    print("샘플 데이터 생성 완료:")
+def cmd_gen_samples(args: argparse.Namespace) -> int:
+    hard = getattr(args, "hard", False)
+    result = generate_hard_samples() if hard else generate_samples()
+    label = "하드(현실 난이도)" if hard else "기본"
+    print(f"{label} 샘플 데이터 생성 완료:")
     print(f"  메일: {result['email']}")
     for p in result["excels"]:  # type: ignore[index]
         print(f"  엑셀: {p}")
+    if hard:
+        exp = result["expected"]  # type: ignore[index]
+        print(
+            f"  기대 검증결과: {exp['total_rows']}행 중 오류 {exp['error_rows']}행 · "
+            f"오류유형 {len(exp['error_types'])}종 · "
+            f"자동교정 {exp['self_correction_applied']}/{exp['self_correction_fixable']}건"
+        )
     return 0
 
 
@@ -74,6 +87,13 @@ def cmd_run(args: argparse.Namespace) -> int:
         else:
             body = args.body or ""
         excel_files = args.excel
+    elif getattr(args, "hard", False):
+        # 하드(현실 난이도) 샘플 사용 — 항상 새로 생성해 최신 상태 보장
+        print("[RUN] 하드(현실 난이도) 샘플 세트로 실행합니다.")
+        hard = generate_hard_samples()
+        subject = MOCK_EMAIL["subject"]
+        body = MOCK_EMAIL["body"]
+        excel_files = list(hard["excels"])  # type: ignore[arg-type]
     else:
         # 샘플 사용 (없으면 생성)
         if not (SAMPLE_DIR / "개선요청_영업팀.xlsx").exists():
@@ -250,6 +270,9 @@ def main() -> int:
     p_t.set_defaults(func=cmd_track)
 
     p_gen = sub.add_parser("gen-samples", help="샘플 메일/엑셀 생성")
+    p_gen.add_argument(
+        "--hard", action="store_true", help="현실 난이도 하드 샘플 생성(오류 5종·스키마 드리프트)"
+    )
     p_gen.set_defaults(func=cmd_gen_samples)
 
     p_run = sub.add_parser("run", help="취합 검증/병합 실행")
@@ -259,6 +282,9 @@ def main() -> int:
     p_run.add_argument("--excel", nargs="+", help="제출 엑셀 파일 경로들")
     p_run.add_argument("--no-llm", action="store_true", help="LLM 미사용(휴리스틱)")
     p_run.add_argument("--graph", action="store_true", help="LangGraph 워크플로우로 실행")
+    p_run.add_argument(
+        "--hard", action="store_true", help="하드(현실 난이도) 샘플 세트로 실행"
+    )
     p_run.add_argument("--json", action="store_true", help="JSON 결과도 출력")
     p_run.set_defaults(func=cmd_run)
 

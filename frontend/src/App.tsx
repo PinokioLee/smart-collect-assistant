@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   collect,
   createGuide,
+  genHardSamples,
   genProjectSamples,
   genSamples,
   getHealth,
@@ -135,6 +136,22 @@ export default function App() {
   async function makeSamples() {
     await genSamples();
     alert("샘플 제출 엑셀을 data/samples 에 생성했습니다. 아래 파일 선택에서 업로드하세요.");
+  }
+
+  async function makeHardSamples() {
+    try {
+      const r = await genHardSamples();
+      const exp = r.expected;
+      alert(
+        "현실 난이도 하드 샘플을 data/samples/hard 에 생성했습니다.\n" +
+          `기대 결과: ${exp.total_rows}행 중 오류 ${exp.error_rows}행 · 오류유형 ${exp.error_types.length}종 · ` +
+          `자동교정 ${exp.self_correction_applied}/${exp.self_correction_fixable}건.\n` +
+          "필수값 누락 · 필수 컬럼 누락(개명) · 날짜형식 · 코드값 · 파일 간 중복 + 통화 숫자/스키마 드리프트를 포함합니다.\n" +
+          "탐색기에서 data/samples/hard 파일을 위 업로드 칸에 올린 뒤 실행하세요."
+      );
+    } catch (e: any) {
+      setError(e?.response?.data?.detail ?? String(e));
+    }
   }
 
   async function run() {
@@ -344,7 +361,10 @@ export default function App() {
           <div className="lane-body">
             <div className="split">
               <div className="col">
-                <div className="row"><button className="ghost" onClick={makeSamples}>샘플 제출 엑셀 생성</button></div>
+                <div className="row">
+                  <button className="ghost" onClick={makeSamples}>샘플 제출 엑셀 생성</button>
+                  <button className="ghost" onClick={makeHardSamples}>하드 샘플 생성(오류 5종)</button>
+                </div>
                 <label>회신받은 제출 엑셀 업로드</label>
                 <input type="file" accept=".xlsx,.xls" multiple onChange={(e) => setFiles(Array.from(e.target.files ?? []))} />
                 {files.length > 0 && (<ul className="filelist">{files.map((f) => (<li key={f.name}>📄 {f.name}</li>))}</ul>)}

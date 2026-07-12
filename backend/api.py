@@ -29,6 +29,7 @@ from smart_collect.pipeline import run_collection  # noqa: E402
 from smart_collect.sample_data import (  # noqa: E402
     MOCK_EMAIL,
     PROJECT_COMMON_COLUMNS,
+    generate_hard_samples,
     generate_project_common_samples,
     generate_samples,
 )
@@ -104,6 +105,12 @@ def health() -> dict:
 @app.post("/api/gen-samples")
 def gen_samples() -> dict:
     return generate_samples()
+
+
+@app.post("/api/gen-hard-samples")
+def gen_hard_samples() -> dict:
+    """현실 난이도 하드 샘플(오류 5종·스키마 드리프트·통화 숫자)을 생성한다 (item 2)."""
+    return generate_hard_samples()
 
 
 @app.post("/api/gen-project-samples")

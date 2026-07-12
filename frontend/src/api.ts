@@ -27,6 +27,25 @@ export async function genSamples(): Promise<{ email: string; excels: string[] }>
   return data;
 }
 
+export interface HardSamplesResponse {
+  email: string;
+  excels: string[];
+  expected: {
+    total_files: number;
+    total_rows: number;
+    error_rows: number;
+    valid_rows: number;
+    error_types: string[];
+    self_correction_applied: number;
+    self_correction_fixable: number;
+  };
+}
+
+export async function genHardSamples(): Promise<HardSamplesResponse> {
+  const { data } = await client.post<HardSamplesResponse>("/gen-hard-samples");
+  return data;
+}
+
 export interface ProjectSamplesResponse {
   common_columns: string[];
   excels: string[];

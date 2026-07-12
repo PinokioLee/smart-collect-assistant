@@ -94,6 +94,10 @@ python backend/cli.py run --no-llm
 # LangGraph 워크플로우 + JSON 출력
 python backend/cli.py run --graph --json
 
+# 현실 난이도 하드 샘플로 실행 (오류 5종·스키마 드리프트·통화 숫자·파일 간 중복)
+python backend/cli.py gen-samples --hard      # data/samples/hard/ 생성
+python backend/cli.py run --hard --graph
+
 # 내 파일로
 python backend/cli.py run --subject "..." --body-file mail.txt \
     --excel a.xlsx b.xlsx c.xlsx
