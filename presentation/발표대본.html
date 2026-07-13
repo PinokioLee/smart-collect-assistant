@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smart Collect Assistant · 슬라이드별 발표 대본</title>
+<style>
+  :root{
+    --paper:#F5F6F3; --surface:#FFFFFF; --surface-2:#ECEFE9;
+    --ink:#14181C; --ink-soft:#49515A; --ink-faint:#79838D;
+    --line:#DCE0D8; --accent:#0C6E62; --accent-soft:#E0EFEC;
+    --llm:#4E58C6; --warn:#B87A15; --err:#C7455A; --pass:#2E9E5B;
+    --sans:'Pretendard','Apple SD Gothic Neo','Malgun Gothic','Segoe UI',system-ui,sans-serif;
+    --mono:'JetBrains Mono','Cascadia Code','Consolas','D2Coding',ui-monospace,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --paper:#0E1216; --surface:#161B21; --surface-2:#1D242B;
+      --ink:#EAEDE9; --ink-soft:#A7AFB7; --ink-faint:#6F7982;
+      --line:#28303A; --accent:#33C3B1; --accent-soft:#0F312D;
+      --llm:#8A92F1; --warn:#DCA13A; --err:#E4697C; --pass:#4FBE77;
+    }
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; background:var(--paper); color:var(--ink);
+    font-family:var(--sans); line-height:1.68; -webkit-font-smoothing:antialiased;}
+  .doc{max-width:760px; margin:0 auto; padding:48px clamp(18px,5vw,40px) 80px;}
+  header.head{border-bottom:2px solid var(--accent); padding-bottom:22px; margin-bottom:10px;}
+  .eyebrow{font-family:var(--mono); font-size:.76rem; letter-spacing:.16em; text-transform:uppercase;
+    color:var(--accent); margin:0 0 10px;}
+  h1{margin:0; font-size:clamp(1.7rem,1.2rem+2vw,2.4rem); font-weight:800; letter-spacing:-.01em; line-height:1.15;}
+  .sub{color:var(--ink-soft); margin:12px 0 0; font-size:1.02rem;}
+  .facts{display:flex; flex-wrap:wrap; gap:8px; margin-top:16px;}
+  .chip{font-family:var(--mono); font-size:.72rem; letter-spacing:.03em; padding:4px 10px; border-radius:999px;
+    background:var(--surface-2); color:var(--ink-soft); border:1px solid var(--line);}
+  .chip a{color:var(--accent); text-decoration:none;}
+  .intro{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:20px 22px; margin:26px 0 8px;
+    box-shadow:0 8px 24px -16px rgba(0,0,0,.25);}
+  .intro h2{margin:0 0 12px; font-size:1.12rem;}
+  .intro ul{margin:0; padding-left:20px;} .intro li{margin:4px 0; color:var(--ink-soft);}
+  .intro li b{color:var(--ink);}
+  .key{display:grid; gap:8px; margin-top:8px;}
+  .key div{padding-left:26px; position:relative; color:var(--ink-soft);}
+  .key div::before{content:attr(data-n); position:absolute; left:0; top:0; font-family:var(--mono);
+    color:var(--accent); font-weight:700;}
+
+  .slide{background:var(--surface); border:1px solid var(--line); border-radius:14px;
+    padding:22px 24px; margin:16px 0; box-shadow:0 8px 24px -18px rgba(0,0,0,.3); break-inside:avoid;}
+  .slide-head{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; border-bottom:1px solid var(--line);
+    padding-bottom:12px; margin-bottom:14px;}
+  .no{font-family:var(--mono); font-size:.9rem; font-weight:700; color:#fff; background:var(--accent);
+    border-radius:8px; padding:3px 9px; font-variant-numeric:tabular-nums;}
+  .stitle{font-size:1.22rem; font-weight:750; letter-spacing:-.01em; flex:1; min-width:180px;}
+  .time{font-family:var(--mono); font-size:.72rem; color:var(--ink-faint); white-space:nowrap;}
+  .lbl{font-family:var(--mono); font-size:.7rem; letter-spacing:.1em; text-transform:uppercase;
+    font-weight:700; display:inline-block; margin:14px 0 6px;}
+  .lbl.screen{color:var(--ink-faint);} .lbl.script{color:var(--accent);} .lbl.tip{color:var(--warn);}
+  .screen-txt{color:var(--ink-soft); font-size:.93rem;}
+  .script-txt{background:var(--accent-soft); border-radius:10px; padding:14px 16px; font-size:1.0rem; line-height:1.72;}
+  .tip-txt{color:var(--ink-soft); font-size:.9rem; border-left:3px solid var(--warn); padding-left:12px;}
+  .tip-txt b{color:var(--ink);}
+  code{font-family:var(--mono); font-size:.86em; background:var(--surface-2); padding:1px 6px; border-radius:5px;}
+  .qa-line{margin:6px 0; font-size:.92rem;}
+  .qa-line .q{color:var(--err); font-weight:700; font-family:var(--mono);}
+  .qa-line .a{color:var(--pass); font-weight:700; font-family:var(--mono);}
+  footer{margin-top:30px; padding-top:18px; border-top:1px solid var(--line); color:var(--ink-faint);
+    font-family:var(--mono); font-size:.76rem;}
+  @media print{
+    body{background:#fff;} .doc{max-width:none; padding:0;}
+    .slide,.intro{box-shadow:none; break-inside:avoid;}
+    .script-txt{background:#eef5f3;}
+  }
+</style>
+</head>
+<body>
+<div class="doc">
+  <header class="head">
+    <p class="eyebrow">멘토 발표 · 슬라이드별 대본</p>
+    <h1>Smart Collect Assistant<br>발표 스크립트</h1>
+    <p class="sub">발표 덱 13장에 맞춘 슬라이드별 말할 내용 · 예상 질문 · 시간 배분.</p>
+    <div class="facts">
+      <span class="chip">발표자 이형진 · 08079</span>
+      <span class="chip">15슬라이드 · 총 ≈ 13–14분</span>
+      <span class="chip">덱: <a href="https://deck-snowy-two.vercel.app">deck-snowy-two.vercel.app</a></span>
+      <span class="chip">github.com/PinokioLee/smart-collect-assistant</span>
+    </div>
+  </header>
+
+  <div class="intro">
+    <h2>발표 전 30초 준비</h2>
+    <ul>
+      <li><b>핵심 메시지 3가지</b>만 기억하세요. 나머지는 이걸 뒷받침하는 근거입니다.</li>
+    </ul>
+    <div class="key">
+      <div data-n="1.">LLM(메일 이해·분류·작성)과 규칙(엑셀 검증)을 <b>분리</b>했다.</div>
+      <div data-n="2.">검증은 <b>결정론적</b>이라 같은 입력이면 항상 같은 결과 — F1 100%, 재현성 표준편차 0.</div>
+      <div data-n="3.">Gmail 수신함 분류·근거 검증까지 <b>확장</b>하되, 발송은 사람이 승인(Human-in-the-loop).</div>
+    </div>
+    <ul style="margin-top:12px;">
+      <li><b>시연 준비물</b>: 덱 URL(휴대폰) · GitHub · (선택) <code>run --hard --graph</code>·<code>inbox</code> 출력 캡처.</li>
+      <li><b>말투</b>: 각 슬라이드 첫 문장은 “무엇을” 말하는지 먼저, 그다음 “왜”.</li>
+    </ul>
+  </div>
+
+  <!-- S1 -->
+  <div class="slide">
+    <div class="slide-head"><span class="no">01</span><span class="stitle">타이틀</span><span class="time">≈ 40초</span></div>
+    <div class="lbl screen">화면</div>
+    <p class="screen-txt">프로젝트명 · 핵심 논지 인용구 · 발표자(이형진 08079) · 기술 스택.</p>
+    <div class="lbl script">대본</div>
+    <p class="script-txt">“안녕하세요, 08079 이형진입니다. 제가 만든 <b>Smart Collect Assistant</b>를 소개하겠습니다.
+      한 문장으로 요약하면 — 여러 부서에서 받은 엑셀을 자동으로 검증하고 병합해 주는 멀티 에이전트 시스템입니다.
+      이 프로젝트의 핵심 아이디어는 화면의 이 문장입니다: <b>‘AI에게는 메일을 읽게 하고, 엑셀 검사는 정확한 계산기 같은 코드에게 맡겼다.’</b>
+      이 역할 분리가 오늘 발표의 중심 주제입니다.”</p>
+    <div class="lbl tip">팁</div>
+    <p class="tip-txt">인용구는 천천히 또박또박 읽어 강조하세요. 첫 슬라이드에서 오늘의 주제어(‘분리’)를 각인시키는 게 목표.</p>
+  </div>
+
+  <!-- S2 -->
+  <div class="slide">
+    <div class="slide-head"><span class="no">02</span><span class="stitle">문제 정의</span><span class="time">≈ 50초</span></div>
+    <div class="lbl screen">화면</div>
+    <p class="screen-txt">현재의 수기 방식 · 왜 자동화인가 · 오류 유형 칩(누락·형식·중복·15.5분).</p>
+    <div class="lbl script">대본</div>
+    <p class="script-txt">“먼저 어떤 문제를 풀려고 했는지 말씀드리겠습니다. 회사에서는 매달 각 부서에
+      ‘이런 항목을 작성해서 보내주세요’라는 취합 요청 메일을 보냅니다. 그러면 부서마다 제각각 양식으로 엑셀을 회신하죠.
+      담당자는 이걸 하나하나 열어 필수값이 비었는지, 날짜 형식이 맞는지, 중복은 없는지 눈으로 확인하고,
+      정상인 것만 골라 손으로 합칩니다. 취합 한 건에 대략 15분 넘게 걸립니다.
+      판단은 거의 없고 규칙은 명확한 — 자동화 이득이 가장 큰 전형적인 반복 업무입니다.”</p>
+    <div class="lbl tip">팁</div>
+    <p class="tip-txt">멘토가 “실제 업무냐”고 물으면 — 시스템 개선요청 취합처럼 부서 취합이 필요한 실무 시나리오라고 답하세요.</p>
+  </div>
+
+  <!-- S3 -->
+  <div class="slide">
+    <div class="slide-head"><span class="no">03</span><span class="stitle">한 장 요약 · 처리 흐름</span><span class="time">≈ 40초</span></div>
+    <div class="lbl screen">화면</div>
+    <p class="screen-txt">메일 → 추출 → 업로드 → 5종 검증 → 병합 → 오류 보고서 → 요약 흐름.</p>
+    <div class="lbl script">대본</div>
+    <p class="script-txt">“전체 흐름을 한 장으로 보면 이렇습니다. 취합 요청 메일 한 건이 들어오면 시스템이 작성 항목과 제출 기준을 뽑아냅니다.
+      그다음 부서들이 제출한 엑셀 여러 개를 업로드하면, 5가지 규칙으로 검증하고, 정상 행만 병합하고,
+      오류는 보고서로 만들고, 마지막에 요약을 냅니다. <b>입력은 지저분하지만 출력은 깨끗합니다.</b>
+      그리고 원본은 절대 건드리지 않고 결과는 전부 별도 파일로 만듭니다.”</p>
+    <div class="lbl tip">팁</div>
+    <p class="tip-txt">‘원본 보존 · 결과는 별도 파일’은 실무 신뢰 포인트라 꼭 한 번 언급.</p>
+  </div>
+
+  <!-- S4 -->
+  <div class="slide">
+    <div class="slide-head"><span class="no">04</span><span class="stitle">핵심 설계 철학</span><span class="time">≈ 60초 (핵심)</span></div>
+    <div class="lbl screen">화면</div>
+    <p class="screen-txt">LLM이 잘하는 일 vs 규칙이 잘하는 일 (2단) · LangGraph = 반장.</p>
+    <div class="lbl script">대본</div>
+    <p class="script-txt">“이 프로젝트에서 제가 가장 신경 쓴 설계 결정입니다. 저는 <b>두 종류의 일을 분리</b>했습니다.
+      왼쪽, LLM이 잘하는 일은 자연어 이해입니다 — 사람이 쓴 메일을 읽고 작성 항목과 마감을 뽑아내고, 요청 메일 초안을 쓰는 것.
+      이건 조금 틀려도 되고 창의적이어도 되는 영역입니다. 오른쪽, 규칙이 잘하는 일은 엑셀 검증입니다 —
+      이건 항상 똑같아야 하고 재현되어야 하는 영역이라 pandas 같은 코드로 처리했습니다.
+      그리고 <b>LangGraph는 이 나뉜 에이전트들이 어떤 순서로 협업할지 정해 주는 ‘반장’</b>입니다.”</p>
+    <div class="lbl tip">팁</div>
+    <p class="tip-txt">여기서 시간을 가장 많이 쓰세요. 멘토가 가장 관심 가질 슬라이드. ‘분리’를 손짓으로 좌/우 나눠 설명하면 각인됨.</p>
+  </div>
+
+  <!-- S5 -->
+  <div class="slide">
+    <div class="slide-head"><span class="no">05</span><span class="stitle">시스템 아키텍처</span><span class="time">≈ 45초</span></div>
+    <div class="lbl screen">화면</div>
+    <p class="screen-txt">Frontend → API → Orchestration → Engine 4계층 · 설계 경계.</p>
+    <div class="lbl script">대본</div>
+    <p class="script-txt">“구현은 3계층입니다. 프론트엔드는 React와 TypeScript, API 서버는 FastAPI,
+      그 뒤에 LangGraph 멀티에이전트 그래프가 있고, 실제 엑셀 처리는 pandas와 openpyxl 규칙 엔진이 합니다.
+      메일 이해에는 Azure OpenAI를 쓰지만 <b>키가 없어도 휴리스틱으로 동작</b>하게 만들었습니다.
+      여기서 중요한 경계는 — LLM은 메일 이해와 초안에만 쓰고, 검증과 병합은 결정론 코드가 한다는 것입니다.”</p>
+    <div class="lbl tip">팁</div>
+    <p class="tip-txt">“키 없어도 동작”은 데모 안정성 어필 포인트. 발표장 인터넷/키 문제로 안 멈춘다는 뜻.</p>
+  </div>
+
+  <!-- S6 -->
+  <div class="slide">
+    <div class="slide-head"><span class="no">06</span><span class="stitle">멀티에이전트 흐름 (LangGraph)</span><span class="time">≈ 55초</span></div>
+    <div class="lbl screen">화면</div>
+    <p class="screen-txt">START→Requirement→Supervisor→[RAG?]→Validation→Self-Correction→Merge/Report→END 타임라인. 파란=LLM, 초록=규칙.</p>
+    <div class="lbl script">대본</div>
+    <p class="script-txt">“LangGraph 내부에서 에이전트들이 순서대로 협업합니다. 먼저 Requirement Analysis가 메일을 분석하고,
+      Supervisor가 검증 전략을 세우면서 ToT라는 기법으로 검증 규칙을 확정합니다. 필요하면 RAG로 기준 문서를 참고하고,
+      Excel Validation이 5종 규칙 검증을 합니다. 그다음 Self-Correction이 안전하게 고칠 수 있는 오류만 고치고,
+      마지막으로 병합·오류 보고서·요약을 만듭니다. 화면에서 <b>파란 태그가 LLM을 쓰는 단계, 초록 태그가 규칙만 쓰는 단계</b>입니다 —
+      보시면 검증과 병합은 전부 규칙입니다.”</p>
+    <div class="lbl tip">팁</div>
+    <p class="tip-txt">태그 색을 손으로 가리키며 ‘LLM vs 규칙’을 시각적으로 다시 강조. 4번 슬라이드 메시지의 반복 확인.</p>
+  </div>
+
+  <!-- S7 -->
+  <div class="slide">
+    <div class="slide-head"><span class="no">07</span><span class="stitle">검증 규칙 5종</span><span class="time">≈ 45초</span></div>
+    <div class="lbl screen">화면</div>
+    <p class="screen-txt">필수값 / 필수 컬럼 / 날짜 형식 / 코드값 / 중복 + 원칙 칩 3개.</p>
+    <div class="lbl script">대본</div>
+    <p class="script-txt">“검증 규칙은 5가지입니다. 필수값이 비었는지, 필수 컬럼 자체가 없는지, 날짜가 <code>YYYY-MM-DD</code> 형식인지,
+      긴급도가 상·중·하 중 하나인지, 그리고 파일 경계를 넘어 중복이 있는지. 세 가지 원칙이 있습니다 —
+      결정론적이라 같은 입력이면 항상 같은 결과, 원본은 보존, 그리고 <b>오류는 자동으로 고치지 않고 보고서에 남깁니다.</b>
+      마음대로 고치면 신뢰를 잃으니까요.”</p>
+    <div class="lbl tip">팁</div>
+    <p class="tip-txt">중복은 “파일 하나 안이 아니라 여러 파일을 합쳐서 본다”는 점이 포인트.</p>
+  </div>
+
+  <!-- S8 -->
+  <div class="slide">
+    <div class="slide-head"><span class="no">08</span><span class="stitle">에이전틱 기법 3가지</span><span class="time">≈ 50초</span></div>
+    <div class="lbl screen">화면</div>
+    <p class="screen-txt">ToT · Self-Refine(Self-Correction) · 휴리스틱 폴백.</p>
+    <div class="lbl script">대본</div>
+    <p class="script-txt">“조금 더 기술적인 부분입니다. 세 가지 에이전틱 기법을 썼습니다.
+      첫째 <b>ToT</b> — 검증 규칙 후보를 세 개 만들어 실제 업로드된 엑셀 헤더로 채점해 가장 맞는 걸 고릅니다.
+      둘째 <b>Self-Refine</b> — LLM이 교정값을 제안하면 코드가 그걸 검증해 오류가 실제로 줄 때만 받아들입니다.
+      셋째 <b>폴백</b> — Azure 키가 없어도 전 기능이 동작합니다.
+      공통점은, LLM은 ‘제안’만 하고 최종 ‘확정’은 항상 코드가 한다는 겁니다.”</p>
+    <div class="lbl tip">팁</div>
+    <p class="tip-txt">용어(ToT·Self-Refine)를 모르는 멘토에겐 “규칙 후보 채점”, “고쳐보고 나빠지면 되돌림”으로 풀어 설명.</p>
+  </div>
+
+  <!-- S9 -->
+  <div class="slide">
+    <div class="slide-head"><span class="no">09</span><span class="stitle">왜 검증을 LLM에 안 맡겼나</span><span class="time">≈ 45초</span></div>
+    <div class="lbl screen">화면</div>
+    <p class="screen-txt">LLM 검증=불안정 vs 규칙 검증=재현 (2단) + 논지 인용.</p>
+    <div class="lbl script">대본</div>
+    <p class="script-txt">“멘토님이 ‘왜 검증까지 LLM한테 안 맡겼냐’고 물으실 수 있어 따로 준비했습니다.
+      LLM으로 검증하면 같은 파일인데도 실행마다 행 번호나 오류 유형이 흔들릴 수 있고 비용도 듭니다.
+      규칙으로 하면 같은 입력에 항상 같은 결과가 나와서, 발표나 감사에서 근거를 그대로 재현할 수 있습니다.
+      <b>검증은 창의적인 답이 아니라 정확하고 재현 가능한 답이 필요하기 때문</b>입니다.”</p>
+    <div class="lbl tip">팁</div>
+    <p class="tip-txt">이 슬라이드가 곧 예상 질문의 선제 답변. 멘토가 이미 물었다면 “다음 슬라이드에 답이 있다”며 넘어가도 좋음.</p>
+  </div>
+
+  <!-- S10 -->
+  <div class="slide">
+    <div class="slide-head"><span class="no">10</span><span class="stitle">실측 벤치마크</span><span class="time">≈ 55초</span></div>
+    <div class="lbl screen">화면</div>
+    <p class="screen-txt">F1 100% · 재현성 표준편차 0 · 46행 0.057초 · 99.99%↓ · Self-Correction 100% · ToT 오탐 1건 회피.</p>
+    <div class="lbl script">대본</div>
+    <p class="script-txt">“숫자로 검증한 결과입니다. 라벨을 붙인 데이터셋 4개 파일, 오류 10건으로 측정했습니다.
+      검출 F1은 <b>100%</b> — 10개 전부 잡고 오탐이 0입니다. 열 번 반복해도 <b>결과 표준편차가 0</b>, 즉 완벽히 재현됩니다.
+      46행을 0.057초에 처리하는데 사람이 하면 15분 넘게 걸리니 99.99% 단축입니다.
+      Self-Correction은 고칠 수 있는 오류 6건을 전부 안전하게 고쳤고, ToT는 스키마가 바뀐 상황에서 오탐 1건을 회피했습니다.”</p>
+    <div class="lbl tip">팁</div>
+    <p class="tip-txt">숫자 다 읽지 말고 <b>F1 100%</b>와 <b>표준편차 0</b> 두 개만 확실히 강조. 근거 파일은 <code>data/benchmark_metrics.json</code>.</p>
+  </div>
+
+  <!-- S11 -->
+  <div class="slide">
+    <div class="slide-head"><span class="no">11</span><span class="stitle">정직한 스코프 (1차 PoC)</span><span class="time">≈ 55초</span></div>
+    <div class="lbl screen">화면</div>
+    <p class="screen-txt">되는 것(확장 포함) vs 방식 명확화·후속 (2단) + 원칙 유지 라인.</p>
+    <div class="lbl script">대본</div>
+    <p class="script-txt">“스코프를 정직하게 구분한 부분입니다. 처음엔 Gmail을 앱에서 자동화하지 않는다고 뒀는데,
+      이번에 확장(Phase A/B)으로 실제로 만들었습니다. 지금 되는 건 — 기존 5종 검증·병합·보고에 더해,
+      수신함을 분류하고 담당자별 요청서 초안을 만들고, 고급 RAG로 근거를 검증해 검토 큐에 올린 뒤
+      사람이 승인해 발송하는 것까지입니다. 다만 방식을 분명히 합니다 — 실제 Gmail 읽기·발송은
+      credentials를 넣으면 동작하고 기본은 mock이라 안전하며, 하루 1회 스케줄러는 후속이라 지금은 수집 버튼으로 돌립니다.
+      대신 원칙은 그대로입니다 — <b>자동 발송 안 함(사람 승인), 담당자는 조직도, 근거 없으면 플래그, 검증은 결정론.</b>”</p>
+    <div class="lbl tip">팁</div>
+    <p class="tip-txt">핵심 프레이밍 — <b>“‘안 한다’가 ‘했다’로 바뀌었지만 Human-in-the-loop와 근거 표시는 유지”</b>.
+      약점이 아니라 성숙한 확장으로 설명. (이전 발표의 “Gmail 자동화 안 함”과 모순되지 않게 이렇게 말하세요.)</p>
+  </div>
+
+  <!-- S12 PHASE A -->
+  <div class="slide">
+    <div class="slide-head"><span class="no">12</span><span class="stitle">확장 Phase A · Gmail 파이프라인</span><span class="time">≈ 55초</span></div>
+    <div class="lbl screen">화면</div>
+    <p class="screen-txt">수신함 수집→분류→요청서 초안→검토 큐→승인 발송 흐름 + 실제 검토 큐 화면.</p>
+    <div class="lbl script">대본</div>
+    <p class="script-txt">“확장의 첫 부분, Gmail 파이프라인입니다. 수신함을 수집하고(기본 mock, credentials 넣으면 실제 gmail.readonly),
+      일반과 취합요청을 확신도와 함께 분류합니다. 취합요청이면 담당자별 요청서 초안을 만드는데,
+      이때 <b>수신자는 RAG로 추측하지 않고 조직도에서만</b> 가져옵니다. 그리고 근거 검증 결과와 함께 검토 큐에 올리고,
+      <b>사람이 승인해야 발송</b>됩니다. 오른쪽 실제 화면을 보면 취합요청 두 건은 초안이 생성돼 승인·발송 버튼이 있고,
+      확신도 중간은 확인 필요로, 회식·뉴스레터는 일반으로 분류됐습니다. LLM은 이해·분류·작성, 발송 결정은 사람입니다.”</p>
+    <div class="lbl tip">팁</div>
+    <p class="tip-txt">‘조직도에서만 수신자’와 ‘자동 발송 안 함’ 두 가지를 꼭 강조 — 실무 안전장치.</p>
+  </div>
+
+  <!-- S13 PHASE B -->
+  <div class="slide">
+    <div class="slide-head"><span class="no">13</span><span class="stitle">확장 Phase B · 고급 RAG</span><span class="time">≈ 50초</span></div>
+    <div class="lbl screen">화면</div>
+    <p class="screen-txt">메타데이터 필터링 · 쿼리 재작성 · 재정렬 · 근거 검증 (4카드) + 핵심 라인.</p>
+    <div class="lbl script">대본</div>
+    <p class="script-txt">“확장의 두 번째, 고급 RAG입니다. 네 가지를 넣었습니다 — 문서 태그로 검색 범위를 좁히는 메타데이터 필터링,
+      메일을 검색에 적합한 질의로 바꾸는 쿼리 재작성, 관련도로 상위 문서만 고르는 재정렬,
+      그리고 가장 중요한 <b>근거 검증</b>입니다. 생성될 요청 메일의 작성 항목·기한·담당자·규칙 근거가 실제 자료에 근거하는지 확인하고,
+      없으면 ‘확인 필요’로 플래그합니다. 앞 화면에서 한 건은 근거 100%, 다른 건은 75%에 ‘작성 항목’ 플래그가 뜬 게 이겁니다.
+      핵심은 RAG를 많이 쓰는 게 아니라 <b>AI가 임의로 지어내지 않도록 근거를 검증</b>하는 것이고, 임베딩 없이 구현했습니다.”</p>
+    <div class="lbl tip">팁</div>
+    <p class="tip-txt">근거 100% vs 75%+플래그 대비가 이 프로젝트 논지(‘LLM 제안, 코드 검증’)의 결정적 예시.</p>
+  </div>
+
+  <!-- S14 -->
+  <div class="slide">
+    <div class="slide-head"><span class="no">14</span><span class="stitle">그 외 개선 · 하드 샘플</span><span class="time">≈ 40초</span></div>
+    <div class="lbl screen">화면</div>
+    <p class="screen-txt">하드 샘플 생성기(오류 5종·스키마 드리프트·통화 숫자·파일 간 중복) + 테스트 87 통과.</p>
+    <div class="lbl script">대본</div>
+    <p class="script-txt">“그 외 개선으로, 기존 샘플이 너무 쉬워서 현실 난이도의 하드 샘플 생성기를 추가했습니다.
+      필수값 누락, 컬럼 이름이 바뀌는 스키마 드리프트, 파일 간 중복, 통화·콤마가 섞인 숫자까지 심었습니다.
+      결과는 결정론적으로 고정했고 — 3파일 11행에서 오류 6행, 5종 전부 재현됩니다.
+      Self-Correction은 안전한 2건만 고치고 나머지는 정직하게 남깁니다. <b>Phase A/B까지 더해 테스트 87개 전부 통과, GitHub에 반영</b>했습니다.”</p>
+    <div class="lbl tip">팁</div>
+    <p class="tip-txt">“계속 개선 중”이라는 진행형 인상. 테스트 87개로 마무리.</p>
+  </div>
+
+  <!-- S15 -->
+  <div class="slide">
+    <div class="slide-head"><span class="no">15</span><span class="stitle">예상 Q&amp;A · 데모 · 마무리</span><span class="time">≈ 50초</span></div>
+    <div class="lbl screen">화면</div>
+    <p class="screen-txt">예상 질문 4개 + CLI/UI 데모 명령 + 마무리 한 줄.</p>
+    <div class="lbl script">대본</div>
+    <p class="script-txt">“예상 질문 몇 개를 정리했습니다. 왜 검증을 규칙으로 하냐 — 재현성. Gmail을 실제로 읽냐 —
+      기본은 mock이고 credentials 넣으면 실제로 읽지만 자동 발송은 안 하고 사람이 승인합니다.
+      담당자 주소는 — RAG가 아니라 조직도에서. RAG는 — 메타데이터·근거 검증까지 하는 고급 RAG입니다.
+      데모는 <code>run --hard --graph</code>와 <code>inbox</code>로, UI는 05 수신함 레인까지 보여드립니다.
+      정리하면 — <b>AI의 이해력과 코드의 정확성을 분리해 반복 취합 업무를 재현 가능하게 자동화했습니다.</b> 감사합니다.”</p>
+    <div class="lbl tip">예상 질문 &amp; 답</div>
+    <p class="qa-line"><span class="q">Q</span> 왜 규칙 검증? &nbsp;<span class="a">A</span> 재현성. 같은 입력 → 같은 행·같은 오류.</p>
+    <p class="qa-line"><span class="q">Q</span> Gmail을 실제로 읽나? &nbsp;<span class="a">A</span> 기본 mock, credentials 설정 시 실제 gmail.readonly. 분류·초안까지만, 자동 발송 안 함(사람 승인).</p>
+    <p class="qa-line"><span class="q">Q</span> 담당자 주소는? &nbsp;<span class="a">A</span> RAG로 추측하지 않고 조직도(DB)에서만. 잘못된 발송 방지.</p>
+    <p class="qa-line"><span class="q">Q</span> RAG는? &nbsp;<span class="a">A</span> 메타데이터 필터·쿼리 재작성·근거 검증까지 하는 고급 RAG. 임베딩 없이, 근거 없으면 플래그.</p>
+    <p class="qa-line"><span class="q">Q</span> Self-Correction은 다 고치나? &nbsp;<span class="a">A</span> 아니오. 날짜·코드값만 안전 교정, 필수값·중복은 재제출 대상으로 남김.</p>
+    <p class="qa-line"><span class="q">Q</span> 왜 배포가 Vercel 정적이냐(물으면)? &nbsp;<span class="a">A</span> 발표용 슬라이드는 정적이라 Vercel에 올렸고, 백엔드는 파일 저장·무거운 의존성 때문에 상태 유지형 호스트가 필요해 로컬/후속으로 둔다.</p>
+  </div>
+
+  <footer>
+    Smart Collect Assistant · 이형진 08079 · 발표 대본 v1 · 슬라이드 덱과 함께 사용하세요.
+  </footer>
+</div>
+</body>
+</html>

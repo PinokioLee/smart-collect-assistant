@@ -1,0 +1,668 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Smart Collect Assistant 멘토 발표 슬라이드">
+</head>
+<body>
+<title>Smart Collect Assistant · 멘토 발표</title>
+<style>
+  :root {
+    --paper:#F5F6F3; --surface:#FFFFFF; --surface-2:#ECEFE9;
+    --ink:#14181C; --ink-soft:#49515A; --ink-faint:#79838D;
+    --line:#DCE0D8; --line-strong:#C6CCC1;
+    --accent:#0C6E62; --accent-strong:#095049; --accent-soft:#E0EFEC;
+    --llm:#4E58C6; --llm-soft:#E6E7FA;
+    --pass:#2E9E5B; --warn:#B87A15; --err:#C7455A;
+    --pass-soft:#E4F2E9; --warn-soft:#F5EAD4; --err-soft:#F8E3E7;
+    --shadow:0 1px 2px rgba(20,24,28,.04),0 8px 28px -14px rgba(20,24,28,.18);
+    --sans:'Pretendard','Apple SD Gothic Neo','Malgun Gothic','Segoe UI',system-ui,sans-serif;
+    --mono:'JetBrains Mono','Cascadia Code','Consolas','D2Coding',ui-monospace,monospace;
+    --maxw:1060px;
+    --s--1:.78rem; --s-0:1rem; --s-1:1.2rem; --s-2:clamp(1.35rem,1rem+1.5vw,1.7rem);
+    --s-3:clamp(1.7rem,1.2rem+2.2vw,2.3rem); --s-4:clamp(2.1rem,1.4rem+3.4vw,3.1rem);
+    --s-5:clamp(2.6rem,1.6rem+4.8vw,4.2rem);
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --paper:#0E1216; --surface:#161B21; --surface-2:#1D242B;
+      --ink:#EAEDE9; --ink-soft:#A7AFB7; --ink-faint:#6F7982;
+      --line:#28303A; --line-strong:#3A434E;
+      --accent:#33C3B1; --accent-strong:#5FD6C7; --accent-soft:#0F312D;
+      --llm:#8A92F1; --llm-soft:#1B1E3A;
+      --pass:#4FBE77; --warn:#DCA13A; --err:#E4697C;
+      --pass-soft:#12281B; --warn-soft:#2C2410; --err-soft:#2E141A;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 34px -16px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="light"]{
+    --paper:#F5F6F3; --surface:#FFFFFF; --surface-2:#ECEFE9;
+    --ink:#14181C; --ink-soft:#49515A; --ink-faint:#79838D;
+    --line:#DCE0D8; --line-strong:#C6CCC1;
+    --accent:#0C6E62; --accent-strong:#095049; --accent-soft:#E0EFEC;
+    --llm:#4E58C6; --llm-soft:#E6E7FA;
+    --pass:#2E9E5B; --warn:#B87A15; --err:#C7455A;
+    --pass-soft:#E4F2E9; --warn-soft:#F5EAD4; --err-soft:#F8E3E7;
+    --shadow:0 1px 2px rgba(20,24,28,.04),0 8px 28px -14px rgba(20,24,28,.18);
+  }
+  :root[data-theme="dark"]{
+    --paper:#0E1216; --surface:#161B21; --surface-2:#1D242B;
+    --ink:#EAEDE9; --ink-soft:#A7AFB7; --ink-faint:#6F7982;
+    --line:#28303A; --line-strong:#3A434E;
+    --accent:#33C3B1; --accent-strong:#5FD6C7; --accent-soft:#0F312D;
+    --llm:#8A92F1; --llm-soft:#1B1E3A;
+    --pass:#4FBE77; --warn:#DCA13A; --err:#E4697C;
+    --pass-soft:#12281B; --warn-soft:#2C2410; --err-soft:#2E141A;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 34px -16px rgba(0,0,0,.6);
+  }
+
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth; scroll-snap-type:y proximity;}
+  @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto; scroll-snap-type:none;}}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:var(--sans); line-height:1.6;
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  }
+
+  /* progress + index */
+  .progress{position:fixed; top:0; left:0; height:3px; width:0%; background:var(--accent); z-index:50;}
+  .index{position:fixed; right:16px; bottom:14px; z-index:50;
+    font-family:var(--mono); font-size:var(--s--1); letter-spacing:.02em;
+    color:var(--ink-soft); background:var(--surface); border:1px solid var(--line);
+    padding:5px 10px; border-radius:999px; box-shadow:var(--shadow);
+    font-variant-numeric:tabular-nums;}
+  .index b{color:var(--accent);}
+
+  .slide{
+    min-height:100svh; scroll-snap-align:start;
+    display:flex; flex-direction:column; justify-content:center;
+    padding:74px clamp(20px,5vw,64px) 84px; position:relative;
+  }
+  .slide::before{
+    content:attr(data-no); position:absolute; top:26px; left:clamp(20px,5vw,64px);
+    font-family:var(--mono); font-size:var(--s--1); letter-spacing:.14em;
+    color:var(--ink-faint);
+  }
+  .wrap{width:100%; max-width:var(--maxw); margin:0 auto;}
+  .eyebrow{
+    font-family:var(--mono); font-size:var(--s--1); letter-spacing:.18em;
+    text-transform:uppercase; color:var(--accent); margin:0 0 14px;
+    display:flex; align-items:center; gap:10px;
+  }
+  .eyebrow::before{content:""; width:26px; height:1.5px; background:var(--accent);}
+  h1,h2,h3{margin:0; text-wrap:balance; line-height:1.15; letter-spacing:-.01em;}
+  h1{font-size:var(--s-5); font-weight:800;}
+  h2{font-size:var(--s-4); font-weight:750;}
+  .lead{font-size:var(--s-2); color:var(--ink-soft); font-weight:450; margin:18px 0 0; max-width:64ch;}
+  p{margin:0;}
+  .muted{color:var(--ink-soft);} .faint{color:var(--ink-faint);}
+
+  /* reveal */
+  .r{opacity:0; transform:translateY(14px); transition:opacity .6s ease, transform .6s ease;}
+  .r.in{opacity:1; transform:none;}
+  .r.d1{transition-delay:.06s;} .r.d2{transition-delay:.12s;} .r.d3{transition-delay:.18s;} .r.d4{transition-delay:.24s;}
+  @media (prefers-reduced-motion:reduce){.r{opacity:1; transform:none; transition:none;}}
+
+  /* generic building blocks */
+  .grid{display:grid; gap:16px;}
+  .cols-2{grid-template-columns:repeat(2,1fr);}
+  .cols-3{grid-template-columns:repeat(3,1fr);}
+  @media (max-width:760px){.cols-2,.cols-3{grid-template-columns:1fr;}}
+  .card{
+    background:var(--surface); border:1px solid var(--line); border-radius:14px;
+    padding:20px 22px; box-shadow:var(--shadow);
+  }
+  .card h3{font-size:var(--s-1); font-weight:700; margin-bottom:6px;}
+  .card p{font-size:.95rem; color:var(--ink-soft);}
+  .tag{
+    display:inline-flex; align-items:center; gap:6px; font-family:var(--mono);
+    font-size:.68rem; letter-spacing:.08em; text-transform:uppercase; font-weight:600;
+    padding:3px 9px; border-radius:999px; white-space:nowrap;
+  }
+  .tag.llm{color:var(--llm); background:var(--llm-soft);}
+  .tag.rule{color:var(--accent); background:var(--accent-soft);}
+  .tag.branch{color:var(--ink-soft); background:var(--surface-2);}
+  .tag.pass{color:var(--pass); background:var(--pass-soft);}
+  .tag.warn{color:var(--warn); background:var(--warn-soft);}
+  .tag.err{color:var(--err); background:var(--err-soft);}
+
+  .kicker-row{display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;}
+
+  /* hero */
+  .thesis{
+    margin-top:28px; padding:22px 24px; border-left:3px solid var(--accent);
+    background:var(--surface); border-radius:0 14px 14px 0; box-shadow:var(--shadow);
+    font-size:var(--s-1); line-height:1.65; max-width:60ch;
+  }
+  .thesis b{color:var(--accent); font-weight:700;}
+  .meta{
+    margin-top:30px; display:flex; flex-wrap:wrap; gap:10px 22px;
+    font-family:var(--mono); font-size:var(--s--1); color:var(--ink-soft);
+  }
+  .meta span{display:inline-flex; align-items:center; gap:7px;}
+  .dot{width:6px; height:6px; border-radius:50%; background:var(--accent);}
+
+  /* flow chips (business pipeline) */
+  .flow{display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-top:6px;}
+  .flow .step{
+    background:var(--surface); border:1px solid var(--line); border-radius:10px;
+    padding:11px 14px; font-weight:600; font-size:.92rem; box-shadow:var(--shadow);
+  }
+  .flow .arr{color:var(--accent); font-family:var(--mono); font-weight:700;}
+
+  /* two-world split */
+  .world{border-radius:14px; padding:22px 24px; border:1px solid var(--line); background:var(--surface); box-shadow:var(--shadow);}
+  .world.llm{border-top:3px solid var(--llm);}
+  .world.rule{border-top:3px solid var(--accent);}
+  .world h3{display:flex; align-items:center; justify-content:space-between; gap:12px; font-size:var(--s-1);}
+  .world ul{margin:14px 0 0; padding:0; list-style:none; display:grid; gap:9px;}
+  .world li{padding-left:20px; position:relative; color:var(--ink-soft); font-size:.95rem;}
+  .world li::before{content:"›"; position:absolute; left:2px; color:var(--accent); font-weight:700;}
+  .world.llm li::before{color:var(--llm);}
+
+  /* architecture stack */
+  .stack{display:grid; gap:12px;}
+  .layer{
+    display:grid; grid-template-columns:130px 1fr; gap:18px; align-items:center;
+    background:var(--surface); border:1px solid var(--line); border-radius:12px;
+    padding:16px 20px; box-shadow:var(--shadow);
+  }
+  .layer .lname{font-family:var(--mono); font-size:.82rem; letter-spacing:.04em; color:var(--accent); font-weight:600;}
+  .layer .ldesc{color:var(--ink-soft); font-size:.94rem;}
+  @media (max-width:560px){.layer{grid-template-columns:1fr; gap:6px;}}
+  .boundary{
+    margin-top:16px; padding:14px 18px; border:1px dashed var(--line-strong); border-radius:12px;
+    font-size:.92rem; color:var(--ink-soft); background:color-mix(in srgb,var(--accent-soft) 40%, transparent);
+  }
+  .boundary b{color:var(--ink);}
+
+  /* agent timeline */
+  .timeline{position:relative; margin-top:10px; padding-left:6px;}
+  .node{
+    position:relative; padding:0 0 16px 30px; border-left:2px solid var(--line-strong);
+  }
+  .node:last-child{border-left-color:transparent;}
+  .node::before{
+    content:attr(data-i); position:absolute; left:-13px; top:-2px;
+    width:24px; height:24px; border-radius:50%; background:var(--surface);
+    border:2px solid var(--accent); color:var(--accent);
+    font-family:var(--mono); font-size:.72rem; font-weight:700;
+    display:flex; align-items:center; justify-content:center; font-variant-numeric:tabular-nums;
+  }
+  .node.br::before{border-color:var(--ink-faint); color:var(--ink-faint); content:"?";}
+  .node .nrow{display:flex; flex-wrap:wrap; align-items:center; gap:9px;}
+  .node .nname{font-weight:700; font-size:1.02rem;}
+  .node .nnode{font-family:var(--mono); font-size:.74rem; color:var(--ink-faint);}
+  .node .ndesc{color:var(--ink-soft); font-size:.92rem; margin-top:3px; max-width:62ch;}
+  .endcap{font-family:var(--mono); font-size:var(--s--1); color:var(--ink-faint); letter-spacing:.1em; padding-left:2px;}
+
+  /* rule list */
+  .rules{display:grid; gap:10px;}
+  .rule{
+    display:grid; grid-template-columns:auto 1fr; gap:14px; align-items:baseline;
+    background:var(--surface); border:1px solid var(--line); border-radius:11px; padding:14px 18px; box-shadow:var(--shadow);
+  }
+  .rule .rn{font-family:var(--mono); color:var(--accent); font-weight:700; font-size:.85rem;}
+  .rule b{font-size:1rem;} .rule p{color:var(--ink-soft); font-size:.9rem; margin-top:2px;}
+
+  /* stat tiles */
+  .stats{display:grid; grid-template-columns:repeat(3,1fr); gap:14px;}
+  @media (max-width:760px){.stats{grid-template-columns:repeat(2,1fr);}}
+  @media (max-width:440px){.stats{grid-template-columns:1fr;}}
+  .stat{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:18px 20px; box-shadow:var(--shadow);}
+  .stat .num{font-family:var(--mono); font-size:clamp(1.8rem,1.2rem+2vw,2.5rem); font-weight:750; color:var(--accent); font-variant-numeric:tabular-nums; line-height:1;}
+  .stat .lab{font-weight:650; margin-top:10px; font-size:.96rem;}
+  .stat .sub{color:var(--ink-soft); font-size:.84rem; margin-top:4px;}
+
+  /* scope columns */
+  .scope{display:grid; grid-template-columns:1fr 1fr; gap:16px;}
+  @media (max-width:760px){.scope{grid-template-columns:1fr;}}
+  .scope ul{margin:12px 0 0; padding:0; list-style:none; display:grid; gap:8px;}
+  .scope li{padding-left:22px; position:relative; font-size:.93rem; color:var(--ink-soft);}
+  .scope li::before{position:absolute; left:0; font-family:var(--mono); font-weight:700;}
+  .scope .inc li::before{content:"✓"; color:var(--pass);}
+  .scope .next li::before{content:"→"; color:var(--warn);}
+
+  /* qa */
+  .qa{display:grid; gap:12px;}
+  .qa .item{background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:16px 20px; box-shadow:var(--shadow);}
+  .qa .q{font-weight:700; display:flex; gap:9px; align-items:baseline;}
+  .qa .q .mk{font-family:var(--mono); color:var(--err); font-weight:700;}
+  .qa .a{margin-top:8px; color:var(--ink-soft); font-size:.94rem; display:flex; gap:9px; align-items:baseline;}
+  .qa .a .mk{font-family:var(--mono); color:var(--pass); font-weight:700;}
+
+  /* code */
+  .code{
+    font-family:var(--mono); font-size:.86rem; background:var(--surface-2);
+    border:1px solid var(--line); border-radius:12px; padding:16px 18px; overflow-x:auto;
+    color:var(--ink); line-height:1.7;
+  }
+  .code .c{color:var(--ink-faint);}
+  .code .a{color:var(--accent);}
+
+  .final-line{font-size:var(--s-2); font-weight:600; line-height:1.5; max-width:24ch; margin-top:8px;}
+  .final-line b{color:var(--accent);}
+  a{color:var(--accent); text-decoration:none; border-bottom:1px solid color-mix(in srgb,var(--accent) 40%, transparent);}
+  a:focus-visible, .index:focus-visible{outline:2px solid var(--accent); outline-offset:3px; border-radius:4px;}
+</style>
+
+<div class="progress" id="progress"></div>
+<div class="index" id="index" aria-hidden="true"><b id="idxc">01</b> / 15</div>
+
+<!-- 01 HERO -->
+<section class="slide" data-no="01 / 15" data-title="타이틀">
+  <div class="wrap">
+    <p class="eyebrow r">AI MASTER · 최종 프로젝트 PoC</p>
+    <h1 class="r d1">Smart Collect<br>Assistant</h1>
+    <p class="lead r d2">여러 부서에서 받은 <strong>엑셀 취합 파일을 자동으로 검증·병합</strong>하고,
+      취합 요청 <strong>메일을 분석</strong>해 검증 기준을 세우는 멀티 에이전트 업무 자동화 시스템.</p>
+    <div class="thesis r d3">
+      AI에게는 메일을 <b>읽게</b> 하고, 엑셀 검사는 정확한 <b>계산기 같은 코드</b>에게 맡겼다.
+      LangGraph는 에이전트들이 어떤 순서로 일할지 정하는 <b>반장</b> 역할이다.
+    </div>
+    <div class="meta r d4">
+      <span><span class="dot"></span>발표자 이형진 · 08079</span>
+      <span><span class="dot"></span>React + TypeScript</span>
+      <span><span class="dot"></span>FastAPI</span>
+      <span><span class="dot"></span>LangGraph 멀티에이전트</span>
+    </div>
+  </div>
+</section>
+
+<!-- 02 PROBLEM -->
+<section class="slide" data-no="02 / 15" data-title="문제 정의">
+  <div class="wrap">
+    <p class="eyebrow r">문제 정의</p>
+    <h2 class="r d1">매달 반복되는 엑셀 취합,<br>사람이 손으로 검사한다</h2>
+    <div class="grid cols-2 r d2" style="margin-top:26px;">
+      <div class="card">
+        <h3>지금의 방식</h3>
+        <p>부서 여러 곳에서 제각각 양식으로 회신 → 필수값 누락·날짜 형식·중복을 눈으로 확인 →
+          정상 행만 골라 수기로 병합 → 오류는 다시 회신 요청.</p>
+      </div>
+      <div class="card">
+        <h3>왜 자동화인가</h3>
+        <p>같은 일을 매번, 실수 없이 반복해야 한다. 판단은 거의 없고 <b>규칙은 명확</b>하다.
+          자동화의 이득이 가장 큰 전형적 반복 업무다.</p>
+      </div>
+    </div>
+    <div class="kicker-row r d3" style="margin-top:18px;">
+      <span class="tag err">필수값 누락</span>
+      <span class="tag err">날짜 형식 흔들림</span>
+      <span class="tag err">파일 간 중복</span>
+      <span class="tag branch">양식 제각각</span>
+      <span class="tag warn">취합 1건 ≈ 수기 15.5분(추정)</span>
+    </div>
+  </div>
+</section>
+
+<!-- 03 AT A GLANCE -->
+<section class="slide" data-no="03 / 15" data-title="한눈에">
+  <div class="wrap">
+    <p class="eyebrow r">한 장 요약 · 처리 흐름</p>
+    <h2 class="r d1">지저분한 입력 → 깨끗한 출력</h2>
+    <div class="flow r d2" style="margin-top:24px;">
+      <span class="step">취합 요청 메일 1건</span><span class="arr">→</span>
+      <span class="step">작성 항목·기준 추출</span><span class="arr">→</span>
+      <span class="step">제출 엑셀 N개 업로드</span><span class="arr">→</span>
+      <span class="step">5종 규칙 검증</span><span class="arr">→</span>
+      <span class="step">정상만 병합</span><span class="arr">→</span>
+      <span class="step">오류 보고서</span><span class="arr">→</span>
+      <span class="step">요약</span>
+    </div>
+    <p class="lead r d3" style="margin-top:26px;">
+      <b>입력</b>은 자연어 메일 + 형식이 어긋난 엑셀들. <b>출력</b>은 병합본 · 오류 보고서 · 요약.
+      원본은 손대지 않고 결과는 모두 별도 파일로 만든다.</p>
+  </div>
+</section>
+
+<!-- 04 PHILOSOPHY -->
+<section class="slide" data-no="04 / 15" data-title="설계 철학">
+  <div class="wrap">
+    <p class="eyebrow r">핵심 설계 철학</p>
+    <h2 class="r d1">두 종류의 일을 분리했다</h2>
+    <div class="grid cols-2 r d2" style="margin-top:26px;">
+      <div class="world llm">
+        <h3>LLM이 잘하는 일 <span class="tag llm">언어 이해</span></h3>
+        <ul>
+          <li>자연어 취합 메일 이해</li>
+          <li>작성 항목 · 마감 · 주의사항 추출</li>
+          <li>작성 가이드 · 요청 메일 초안</li>
+          <li>“틀려도 되고, 창의적이어도 되는” 영역</li>
+        </ul>
+      </div>
+      <div class="world rule">
+        <h3>규칙이 잘하는 일 <span class="tag rule">결정론</span></h3>
+        <ul>
+          <li>엑셀 행 단위 검증 (pandas/openpyxl)</li>
+          <li>정상 행 병합 · 오류 보고서</li>
+          <li>“항상 같아야 하고, 재현되어야 하는” 영역</li>
+          <li>LLM이 행의 유효성을 판단하지 않는다</li>
+        </ul>
+      </div>
+    </div>
+    <div class="boundary r d3" style="margin-top:18px;">
+      <b>LangGraph = 반장.</b> 나뉜 역할의 에이전트들이 어떤 순서로 협업할지 정하고,
+      상태(AgentState)를 넘겨가며 일을 진행시킨다.
+    </div>
+  </div>
+</section>
+
+<!-- 05 ARCHITECTURE -->
+<section class="slide" data-no="05 / 15" data-title="아키텍처">
+  <div class="wrap">
+    <p class="eyebrow r">시스템 아키텍처</p>
+    <h2 class="r d1">3계층 · 명확한 경계</h2>
+    <div class="stack r d2" style="margin-top:24px;">
+      <div class="layer"><span class="lname">FRONTEND</span><span class="ldesc">React + TypeScript + Vite — 4단계 파이프라인 콘솔 UI</span></div>
+      <div class="layer"><span class="lname">API</span><span class="ldesc">FastAPI — 업로드·검증·병합·다운로드 엔드포인트 (multipart/JSON)</span></div>
+      <div class="layer"><span class="lname">ORCHESTRATION</span><span class="ldesc">LangGraph 멀티에이전트 그래프 — 노드 흐름과 조건 분기</span></div>
+      <div class="layer"><span class="lname">ENGINE</span><span class="ldesc">pandas / openpyxl 규칙 엔진 · Azure OpenAI(메일 이해, 없으면 휴리스틱)</span></div>
+    </div>
+    <div class="boundary r d3">
+      설계 경계 — <b>LLM은 메일 이해·초안에만</b>, <b>검증·병합은 결정론 코드</b>로.
+      원본 파일 보존, 결과는 <code>data/</code> 아래 별도 파일로 생성.
+    </div>
+  </div>
+</section>
+
+<!-- 06 AGENT FLOW (signature) -->
+<section class="slide" data-no="06 / 15" data-title="멀티에이전트 흐름">
+  <div class="wrap">
+    <p class="eyebrow r">LangGraph 노드 흐름</p>
+    <h2 class="r d1">에이전트들이 순서대로 협업한다</h2>
+    <p class="endcap r d2" style="margin:16px 0 8px;">▶ START</p>
+    <div class="timeline r d2">
+      <div class="node" data-i="1">
+        <div class="nrow"><span class="nname">Requirement Analysis</span><span class="tag llm">LLM</span><span class="nnode">RequirementAnalysisNode</span></div>
+        <p class="ndesc">메일 → 작성 항목·마감·주의사항 추출. Azure 없으면 정규식 휴리스틱으로 폴백.</p>
+      </div>
+      <div class="node" data-i="2">
+        <div class="nrow"><span class="nname">Supervisor · Planning</span><span class="tag llm">LLM</span><span class="tag rule">규칙</span><span class="nnode">PlanningNode</span></div>
+        <p class="ndesc">LLM이 검증 전략·리스크를 판단하고, ToT로 검증 규칙 후보를 채점해 확정.</p>
+      </div>
+      <div class="node br" data-i="?">
+        <div class="nrow"><span class="nname">RAG 필요?</span><span class="tag branch">조건 분기</span></div>
+        <p class="ndesc">필요할 때만 RAG Reference를 경유, 아니면 바로 검증으로.</p>
+      </div>
+      <div class="node" data-i="3">
+        <div class="nrow"><span class="nname">Excel Validation</span><span class="tag rule">규칙</span><span class="nnode">ExcelValidationNode</span></div>
+        <p class="ndesc">5종 결정론 검증 — 같은 입력이면 같은 행·같은 오류 유형.</p>
+      </div>
+      <div class="node" data-i="4">
+        <div class="nrow"><span class="nname">Self-Correction</span><span class="tag llm">LLM</span><span class="tag rule">규칙</span><span class="nnode">SelfCorrectionNode</span></div>
+        <p class="ndesc">Self-Refine — LLM 제안 → 결정론 게이트 검증 → 오류가 줄 때만 채택.</p>
+      </div>
+      <div class="node" data-i="5">
+        <div class="nrow"><span class="nname">Merge · Error Report · Report</span><span class="tag rule">규칙</span><span class="nnode">Merge / ErrorReport / ReportNode</span></div>
+        <p class="ndesc">정상 행만 병합 → 오류 보고서 → 최종 요약 + 실행 트레이스 저장.</p>
+      </div>
+    </div>
+    <p class="endcap r d3">■ END</p>
+  </div>
+</section>
+
+<!-- 07 VALIDATION RULES -->
+<section class="slide" data-no="07 / 15" data-title="검증 규칙 5종">
+  <div class="wrap">
+    <p class="eyebrow r">검증 규칙 · 결정론</p>
+    <h2 class="r d1">규칙 기반 5종 검증</h2>
+    <div class="rules r d2" style="margin-top:22px;">
+      <div class="rule"><span class="rn">01</span><div><b>필수값 누락</b><p>필수 컬럼의 값이 비어 있음</p></div></div>
+      <div class="rule"><span class="rn">02</span><div><b>필수 컬럼 누락</b><p>양식에 필수 컬럼 자체가 없음(개명·삭제)</p></div></div>
+      <div class="rule"><span class="rn">03</span><div><b>날짜 형식 오류</b><p>날짜 컬럼이 <code>YYYY-MM-DD</code> 형식이 아님</p></div></div>
+      <div class="rule"><span class="rn">04</span><div><b>허용되지 않은 코드값</b><p>긴급도 ∉ {상, 중, 하}</p></div></div>
+      <div class="rule"><span class="rn">05</span><div><b>중복 데이터</b><p>(부서명·요청시스템·개선요청내용) 키 중복 — 파일 경계를 넘어 전체 기준</p></div></div>
+    </div>
+    <div class="kicker-row r d3" style="margin-top:18px;">
+      <span class="tag rule">결정론 · 같은 입력 → 같은 결과</span>
+      <span class="tag pass">원본 보존</span>
+      <span class="tag warn">오류는 자동수정 않고 보고서로 남김</span>
+    </div>
+  </div>
+</section>
+
+<!-- 08 AGENTIC TECHNIQUES -->
+<section class="slide" data-no="08 / 15" data-title="에이전틱 기법">
+  <div class="wrap">
+    <p class="eyebrow r">에이전틱 설계 기법</p>
+    <h2 class="r d1">LLM은 ‘제안’, 코드는 ‘확정’</h2>
+    <div class="grid cols-3 r d2" style="margin-top:24px;">
+      <div class="card">
+        <span class="tag rule">ToT</span>
+        <h3 style="margin-top:10px;">Tree of Thoughts</h3>
+        <p>검증 규칙 후보 3개(Strict / Balanced / Loose)를 실제 업로드 헤더로 채점해 확정.
+          스키마 드리프트에서 오탐을 회피한다.</p>
+      </div>
+      <div class="card">
+        <span class="tag llm">Self-Refine</span>
+        <h3 style="margin-top:10px;">Self-Correction</h3>
+        <p>LLM이 교정값을 제안하면 코드가 결정론 게이트로 검증. 날짜·코드값만 안전 교정하고
+          필수값·중복은 손대지 않는다.</p>
+      </div>
+      <div class="card">
+        <span class="tag branch">Fallback</span>
+        <h3 style="margin-top:10px;">휴리스틱 폴백</h3>
+        <p>Azure 키가 없어도 전 기능이 동작한다. 무비용·재현 가능한 경로를 항상 유지.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 09 WHY NOT LLM -->
+<section class="slide" data-no="09 / 15" data-title="왜 규칙인가">
+  <div class="wrap">
+    <p class="eyebrow r">핵심 논지</p>
+    <h2 class="r d1">왜 엑셀 검증을 LLM에 맡기지 않았나</h2>
+    <div class="grid cols-2 r d2" style="margin-top:24px;">
+      <div class="world llm">
+        <h3>LLM으로 검증하면 <span class="tag err">불안정</span></h3>
+        <ul>
+          <li>행 번호·오류 유형이 실행마다 흔들릴 수 있음</li>
+          <li>같은 파일에도 다른 답이 나올 위험</li>
+          <li>비용·지연 발생</li>
+        </ul>
+      </div>
+      <div class="world rule">
+        <h3>규칙으로 검증하면 <span class="tag pass">재현</span></h3>
+        <ul>
+          <li>같은 입력 → 같은 행·같은 오류 유형 보장</li>
+          <li>결정론 게이트가 채택까지 관장</li>
+          <li>발표·감사에서 근거를 그대로 재현</li>
+        </ul>
+      </div>
+    </div>
+    <div class="thesis r d3" style="margin-top:22px;">
+      검증은 <b>창의적인 답</b>이 아니라 <b>정확하고 재현 가능한 답</b>이 필요하다.
+      그래서 LLM은 값의 의미를 제안하고, 코드가 검증·확정한다.
+    </div>
+  </div>
+</section>
+
+<!-- 10 BENCHMARK -->
+<section class="slide" data-no="10 / 15" data-title="실측 벤치마크">
+  <div class="wrap">
+    <p class="eyebrow r">정량 검증 · 실측 벤치마크</p>
+    <h2 class="r d1">숫자로 보는 결과</h2>
+    <div class="stats r d2" style="margin-top:24px;">
+      <div class="stat"><div class="num">100%</div><div class="lab">검출 F1</div><div class="sub">10/10 검출 · 오탐 0 · 미탐 0</div></div>
+      <div class="stat"><div class="num">0.0</div><div class="lab">재현성 표준편차</div><div class="sub">10회 반복 · 평균 8.1 ms</div></div>
+      <div class="stat"><div class="num">0.057s</div><div class="lab">46행 처리</div><div class="sub">808 행/초 · 808배 빠른 처리</div></div>
+      <div class="stat"><div class="num">99.99%</div><div class="lab">수기 대비 시간 절감</div><div class="sub">≈15.5분 → 0.06초</div></div>
+      <div class="stat"><div class="num">100%</div><div class="lab">Self-Correction</div><div class="sub">교정 가능 6건 전부 · 재작업 60%↓</div></div>
+      <div class="stat"><div class="num">1건</div><div class="lab">ToT 오탐 회피</div><div class="sub">드리프트 시 Strict 0.79 → Balanced 1.0</div></div>
+    </div>
+    <p class="faint r d3" style="margin-top:16px; font-family:var(--mono); font-size:var(--s--1);">
+      * 라벨 데이터셋 4파일 · 오류 10건 실측 — <code>data/benchmark_metrics.json</code></p>
+  </div>
+</section>
+
+<!-- 11 HONEST SCOPE -->
+<section class="slide" data-no="11 / 15" data-title="정직한 스코프">
+  <div class="wrap">
+    <p class="eyebrow r">스코프 · mock-우선 확장</p>
+    <h2 class="r d1">되는 것 · 방식 명확화 · 후속</h2>
+    <div class="scope r d2" style="margin-top:24px;">
+      <div class="card inc">
+        <h3>지금 되는 것 (확장 포함) <span class="tag pass">구현·검증됨</span></h3>
+        <ul>
+          <li>5종 검증 · 정상 병합 · 오류 보고서 · 요약</li>
+          <li>수신함 분류(확신도) → 담당자별 요청서 초안</li>
+          <li>고급 RAG 근거 검증 + 검토 큐</li>
+          <li>사람 승인 후 발송 (Human-in-the-loop)</li>
+        </ul>
+      </div>
+      <div class="card next">
+        <h3>방식 명확화 &amp; 후속 <span class="tag warn">확장 범위</span></h3>
+        <ul>
+          <li>실제 Gmail 읽기·발송: credentials 설정 시 동작 (기본은 mock으로 안전)</li>
+          <li>하루 1회 스케줄러: 후속 (현재 on-demand ‘수집’ 버튼)</li>
+          <li>라벨링 · 의미검색(임베딩) · 리랭킹: 후속</li>
+        </ul>
+      </div>
+    </div>
+    <div class="boundary r d3" style="margin-top:18px;">
+      원칙 유지 — <b>자동 발송 안 함(사람 승인) · 담당자=조직도(추측 금지) · 근거 없으면 플래그 · 검증은 결정론.</b>
+      ‘안 한다’가 ‘했다’로 바뀌었지만, Human-in-the-loop와 정직한 근거 표시는 그대로다.
+    </div>
+  </div>
+</section>
+
+<!-- 12 PHASE A — Gmail pipeline -->
+<section class="slide" data-no="12 / 15" data-title="확장 · Gmail 파이프라인">
+  <div class="wrap">
+    <p class="eyebrow r" style="color:var(--llm);">확장 · Phase A</p>
+    <h2 class="r d1">수신함 자동 분류 → 요청서 초안 → 승인 발송</h2>
+    <div class="grid cols-2 r d2" style="margin-top:20px; align-items:start;">
+      <div class="timeline">
+        <div class="node" data-i="1"><div class="nrow"><span class="nname">수신함 수집</span><span class="tag rule">읽기</span></div><p class="ndesc">Gmail 읽기 — mock / gmail.readonly (credentials 시 실제)</p></div>
+        <div class="node" data-i="2"><div class="nrow"><span class="nname">분류</span><span class="tag llm">LLM</span></div><p class="ndesc">일반 / 취합요청 · 확신도 3단계</p></div>
+        <div class="node" data-i="3"><div class="nrow"><span class="nname">요청서 초안</span><span class="tag llm">LLM</span></div><p class="ndesc">담당자별 · 수신자는 조직도(추측 금지)</p></div>
+        <div class="node" data-i="4"><div class="nrow"><span class="nname">검토 큐</span><span class="tag rule">규칙</span></div><p class="ndesc">근거 검증 결과와 함께 표시</p></div>
+        <div class="node" data-i="5"><div class="nrow"><span class="nname">사람 승인 → 발송</span><span class="tag branch">Human-in-the-loop</span></div><p class="ndesc">자동 발송 안 함</p></div>
+      </div>
+      <div class="grid" style="gap:9px;">
+        <div class="card" style="border-top:3px solid var(--pass); padding:13px 16px;">
+          <div class="kicker-row" style="margin:0 0 6px;"><span class="tag pass">초안 생성</span><span class="tag rule">취합요청 100%</span></div>
+          <p style="font-weight:700; font-size:.95rem;">[요청] 2026년 7월 시스템 개선 취합</p>
+          <p class="muted" style="font-size:.82rem; margin-top:3px;">수신자 3명(조직도) · 근거 100% · 취합업무_가이드.md</p>
+        </div>
+        <div class="card" style="border-top:3px solid var(--pass); padding:13px 16px;">
+          <div class="kicker-row" style="margin:0 0 6px;"><span class="tag pass">초안 생성</span><span class="tag rule">취합요청 100%</span></div>
+          <p style="font-weight:700; font-size:.95rem;">7월 인원 현황 제출 요청</p>
+          <p class="muted" style="font-size:.82rem; margin-top:3px;">근거 75% · <span style="color:var(--warn); font-weight:600;">⚠ 확인 필요: 작성 항목</span></p>
+        </div>
+        <div class="card" style="border-top:3px solid var(--warn); padding:11px 16px;">
+          <div class="kicker-row" style="margin:0;"><span class="tag warn">확인 필요</span><span class="tag branch">취합요청 56%</span><span class="faint" style="font-size:.8rem;">자료 관련 문의</span></div>
+        </div>
+        <div class="card" style="padding:11px 16px;">
+          <div class="kicker-row" style="margin:0;"><span class="tag branch">일반</span><span class="faint" style="font-size:.8rem;">회식 안내 · 뉴스레터</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 13 PHASE B — advanced RAG -->
+<section class="slide" data-no="13 / 15" data-title="확장 · 고급 RAG">
+  <div class="wrap">
+    <p class="eyebrow r" style="color:var(--llm);">확장 · Phase B</p>
+    <h2 class="r d1">고급 RAG — 근거를 찾고, 검증한다</h2>
+    <div class="grid cols-2 r d2" style="margin-top:22px;">
+      <div class="card"><h3>메타데이터 필터링</h3><p>문서 태그(종류·부서·상태·연도)로 검색 범위를 좁힌다.</p></div>
+      <div class="card"><h3>쿼리 재작성</h3><p>메일 → 검색에 적합한 질의 여러 개를 자동 생성.</p></div>
+      <div class="card"><h3>재정렬 (rerank)</h3><p>관련도 점수로 상위 문서만 LLM에 전달.</p></div>
+      <div class="card" style="border-top:3px solid var(--llm);"><h3>근거 검증 (grounding)</h3><p>생성 항목의 출처 확인 · 없으면 <b style="color:var(--warn);">‘확인 필요’ 플래그</b>.</p></div>
+    </div>
+    <div class="boundary r d3" style="margin-top:18px;">
+      핵심 — <b>RAG를 많이 쓰는 게 아니라, 잘못된 요청 메일이 만들어지지 않도록 근거를 검증하는 데 쓴다.</b>
+      임베딩 없이(표준 라이브러리) 구현.
+    </div>
+  </div>
+</section>
+
+<!-- 14 RECENT IMPROVEMENT -->
+<section class="slide" data-no="14 / 15" data-title="최근 개선">
+  <div class="wrap">
+    <p class="eyebrow r">최근 개선 · 하드 샘플 생성기</p>
+    <h2 class="r d1">현실 난이도로 검증을 압박한다</h2>
+    <div class="grid cols-2 r d2" style="margin-top:24px;">
+      <div class="card">
+        <h3>무엇을 심었나</h3>
+        <p>필수값 누락 · 필수 컬럼 개명(스키마 드리프트) · 날짜 형식 · 코드값 ·
+          <b>파일 간 중복</b> + 통화/콤마 숫자 + 컬럼 순서 변경·추가.</p>
+      </div>
+      <div class="card">
+        <h3>결정론으로 고정</h3>
+        <p>3파일 11행 → 오류 6행, <b>5종 전부</b> 재현. Self-Correction은 안전한
+          2건만(50%) 교정하고 ‘미정’·누락·중복은 정직하게 잔여로 남김.</p>
+      </div>
+    </div>
+    <div class="kicker-row r d3" style="margin-top:18px;">
+      <span class="tag pass">테스트 87개 통과</span>
+      <span class="tag pass">Phase A/B 포함</span>
+      <span class="tag pass">프론트 빌드 통과</span>
+      <span class="tag rule">GitHub master 반영</span>
+    </div>
+  </div>
+</section>
+
+<!-- 15 QA + DEMO -->
+<section class="slide" data-no="15 / 15" data-title="예상 Q&A · 데모">
+  <div class="wrap">
+    <p class="eyebrow r">멘토 예상 Q&amp;A · 데모</p>
+    <h2 class="r d1">질문에 이렇게 답한다</h2>
+    <div class="qa r d2" style="margin-top:22px;">
+      <div class="item"><p class="q"><span class="mk">Q</span>왜 검증을 규칙으로?</p><p class="a"><span class="mk">A</span>재현성. 같은 입력이면 같은 행·같은 오류가 나와야 하기 때문.</p></div>
+      <div class="item"><p class="q"><span class="mk">Q</span>Gmail을 실제로 읽나?</p><p class="a"><span class="mk">A</span>기본은 mock 수신함, credentials 설정 시 실제 gmail.readonly. 분류·초안까지만 하고 자동 발송은 안 함(사람 승인).</p></div>
+      <div class="item"><p class="q"><span class="mk">Q</span>담당자 주소는 어떻게?</p><p class="a"><span class="mk">A</span>RAG로 추측하지 않고 조직도(DB)에서만 가져온다. 잘못된 발송을 막기 위함.</p></div>
+      <div class="item"><p class="q"><span class="mk">Q</span>RAG는 무엇을 하나?</p><p class="a"><span class="mk">A</span>메타데이터 필터·쿼리 재작성·근거 검증까지 하는 고급 RAG. 임베딩 없이, 근거 없는 항목은 플래그.</p></div>
+    </div>
+    <div class="code r d3" style="margin-top:22px;">
+<span class="c"># CLI 데모 — 하드 샘플 워크플로우 · 수신함 분류</span>
+python backend/cli.py run <span class="a">--hard --graph</span>   ·   python backend/cli.py <span class="a">inbox</span>
+
+<span class="c"># UI 데모 — 05 수신함 레인까지</span>
+npm run dev   <span class="c">→</span>  http://localhost:5173
+    </div>
+    <p class="final-line r d3" style="margin-top:24px;">
+      AI의 <b>이해력</b>과 코드의 <b>정확성</b>을 분리해,<br>반복 취합 업무를 재현 가능하게 자동화했다.</p>
+    <p class="faint r d4" style="margin-top:14px; font-family:var(--mono); font-size:var(--s--1);">
+      이형진 · 08079 · github.com/PinokioLee/smart-collect-assistant</p>
+  </div>
+</section>
+
+<script>
+  (function(){
+    var prog=document.getElementById('progress');
+    var idxc=document.getElementById('idxc');
+    var slides=[].slice.call(document.querySelectorAll('.slide'));
+    function onScroll(){
+      var h=document.documentElement;
+      var max=h.scrollHeight-h.clientHeight;
+      var p=max>0?(h.scrollTop/max)*100:0;
+      prog.style.width=p.toFixed(2)+'%';
+    }
+    document.addEventListener('scroll',onScroll,{passive:true}); onScroll();
+
+    var reduce=window.matchMedia('(prefers-reduced-motion:reduce)').matches;
+    var io=new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if(e.isIntersecting){
+          e.target.querySelectorAll('.r').forEach(function(el){el.classList.add('in');});
+          var no=e.target.getAttribute('data-no');
+          if(no){ idxc.textContent=no.split('/')[0].trim(); }
+        }
+      });
+    },{threshold:0.35});
+    slides.forEach(function(s){
+      if(reduce){ s.querySelectorAll('.r').forEach(function(el){el.classList.add('in');}); }
+      io.observe(s);
+    });
+  })();
+</script>
+
+</body>
+</html>
