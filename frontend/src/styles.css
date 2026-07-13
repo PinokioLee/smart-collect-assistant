@@ -34,12 +34,15 @@ body {
   line-height: 1.55;
 }
 
-/* ---------- 전체 셸: 두 개의 화면(각 뷰포트 높이)을 세로로 ---------- */
+/* ---------- 전체 셸: 섹션을 세로로. 데스크톱에선 가운데 정렬 + 최대폭 ---------- */
 .shell {
   min-height: 100vh;
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
-  padding: 16px 22px 26px;
+  padding: 16px 24px 40px;
   gap: 14px;
 }
 
@@ -82,7 +85,7 @@ body {
 .screen {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 22px;
 }
 .topbar { position: sticky; top: 0; z-index: 10; background: var(--canvas); padding: 4px 0 10px; box-shadow: 0 1px 0 var(--line); }
 
@@ -91,20 +94,24 @@ body {
   width: 100%;
   display: flex; flex-direction: column;
   background: var(--surface); border: 1px solid var(--line);
-  border-radius: var(--radius); box-shadow: var(--shadow);
+  border-radius: var(--radius);
+  box-shadow: 0 1px 2px rgba(20, 24, 30, 0.04), 0 18px 40px -28px rgba(20, 24, 30, 0.35);
+  overflow: hidden;
 }
 .lane-head {
   flex: none;
-  padding: 16px 18px 14px;
+  padding: 18px 20px 16px 18px;
   border-bottom: 1px solid var(--line);
-  background: linear-gradient(180deg, var(--surface), var(--surface-2));
+  background: linear-gradient(180deg, var(--brand-soft), var(--surface) 70%);
 }
-.lane-eyebrow { display: flex; align-items: center; gap: 9px; }
+.lane-eyebrow { display: flex; align-items: center; gap: 11px; }
 .lane-no {
-  flex: 0 0 auto; width: 28px; height: 28px; border-radius: 8px;
+  flex: 0 0 auto; width: 38px; height: 38px; border-radius: 11px;
   background: var(--brand); color: #fff;
   display: grid; place-items: center;
-  font-family: var(--mono); font-size: 12px; font-weight: 700;
+  font-family: var(--mono); font-size: 15px; font-weight: 700; letter-spacing: -0.01em;
+  box-shadow: 0 0 0 4px var(--surface), 0 0 0 5px var(--brand-soft),
+    0 6px 14px -6px rgba(11, 110, 79, 0.55);
 }
 .lane-kicker {
   font-family: var(--mono); font-size: 10.5px; font-weight: 700;
