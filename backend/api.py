@@ -35,6 +35,9 @@ from smart_collect.sample_data import (  # noqa: E402
 )
 from smart_collect.state import AgentState  # noqa: E402
 from smart_collect.tools import rag_tools  # noqa: E402
+from smart_collect import store  # noqa: E402
+from smart_collect.inbox_pipeline import ingest_inbox  # noqa: E402
+from smart_collect.tools.email_tools import EmailSendRequest, send_email  # noqa: E402
 
 UPLOAD_DIR = DATA_DIR / "uploads"
 
@@ -122,6 +125,52 @@ def gen_project_samples() -> dict:
 @app.get("/api/sample-email")
 def sample_email() -> dict:
     return {"subject": MOCK_EMAIL["subject"], "body": MOCK_EMAIL["body"]}
+
+
+@app.post("/api/inbox/ingest")
+def inbox_ingest(
+    max_results: int = Form(20),
+    use_llm: bool = Form(True),
+) -> dict:
+    """수신함 1회 수집·분류·초안 생성 (Phase A). 기본은 mock 수신함."""
+    result = ingest_inbox(prefer_llm=use_llm, max_results=max_results)
+    result["read_mode"] = settings.email_read_mode
+    return result
+
+
+@app.get("/api/inbox/queue")
+def inbox_queue(status: str | None = None) -> dict:
+    """검토 큐 조회(선택: status 필터). draft_ready/needs_review/general/sent/error."""
+    store.init_db()  # 최초 조회(수집 전)에도 안전하도록 테이블 보장
+    return {
+        "queue": store.list_records(status=status),
+        "counts": store.counts_by_status(),
+        "read_mode": settings.email_read_mode,
+    }
+
+
+@app.post("/api/inbox/{message_id}/send")
+def inbox_send(message_id: str) -> dict:
+    """검토 완료한 초안을 승인·발송한다(Human-in-the-loop). 기존 발송 경로 재사용."""
+    rec = store.get_record(message_id)
+    if not rec:
+        raise HTTPException(status_code=404, detail="해당 메일을 찾을 수 없습니다.")
+    if rec["status"] != "draft_ready":
+        raise HTTPException(
+            status_code=400, detail="발송 가능한 초안(draft_ready) 상태가 아닙니다."
+        )
+    to = [c["email"] for c in rec.get("recipients", []) if c.get("email")]
+    if not to:
+        raise HTTPException(status_code=400, detail="수신자가 없습니다.")
+    result = send_email(
+        EmailSendRequest(
+            to=to,
+            subject=rec.get("draft_subject") or "[취합 요청]",
+            body=rec.get("draft_body") or "",
+        )
+    )
+    store.mark_sent(message_id, result.get("message_id"))
+    return {"message_id": message_id, "send_result": result}
 
 
 @app.post("/api/collect")

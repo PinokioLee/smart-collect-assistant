@@ -216,6 +216,65 @@ export async function updateFields(input: {
   return data;
 }
 
+// ---------- 수신함 자동 분류 (Phase A/B) ----------
+
+export interface Grounding {
+  checks: { item: string; grounded: boolean; source: string }[];
+  flags: string[];
+  score: number;
+}
+
+export interface InboxItem {
+  message_id: string;
+  sender: string;
+  subject: string;
+  received_at: string;
+  classification: string;
+  confidence: number;
+  tier: string;
+  status: string;
+  draft_subject?: string | null;
+  draft_body?: string | null;
+  recipients: { name: string; dept: string; email: string }[];
+  reasons: string[];
+  source: string;
+  grounding: Grounding;
+  sources: string[];
+  sent: boolean;
+}
+
+export interface IngestResult {
+  fetched: number;
+  processed_new: number;
+  skipped: number;
+  by_status: Record<string, number>;
+  queue: InboxItem[];
+  read_mode: string;
+}
+
+export async function inboxIngest(useLlm = true): Promise<IngestResult> {
+  const form = new FormData();
+  form.append("use_llm", String(useLlm));
+  const { data } = await client.post<IngestResult>("/inbox/ingest", form);
+  return data;
+}
+
+export async function inboxQueue(
+  status?: string
+): Promise<{ queue: InboxItem[]; counts: Record<string, number>; read_mode: string }> {
+  const { data } = await client.get("/inbox/queue", {
+    params: status ? { status } : {},
+  });
+  return data;
+}
+
+export async function inboxSend(
+  messageId: string
+): Promise<{ message_id: string; send_result: SendEmailResponse }> {
+  const { data } = await client.post(`/inbox/${encodeURIComponent(messageId)}/send`);
+  return data;
+}
+
 export interface SyncCommonFieldsResponse extends UpdateFieldsResponse {
   common_columns: string[];
   key_column: string;

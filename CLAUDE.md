@@ -477,6 +477,27 @@ All items 1–7 from "User's Requested Next Improvements" are done (item 2 compl
    - `npm run build`
    - `python backend/cli.py demo`
 
+## Gmail Inbox Pipeline + Advanced RAG (Phase A/B, added 2026-07-14)
+
+New feature set: read the inbox → classify (일반 vs 취합요청) → auto-draft per-담당자 request mails → human approves → send. Plus advanced RAG (grounding verification) on the generated drafts. Mock-first: runs/tests without Gmail credentials; flip to real Gmail with `EMAIL_READ_MODE=gmail` + `GMAIL_CREDENTIALS_FILE`.
+
+New backend modules:
+- `backend/smart_collect/tools/inbox_tools.py` — inbox read adapters, mirroring the send-adapter split: `MockInboxAdapter` (5 sample mails) + `GmailReadAdapter` (real `gmail.readonly`, separate token file `gmail_read_token.json`). `get_inbox_adapter()` picks by `EMAIL_READ_MODE`.
+- `backend/smart_collect/tools/mail_classifier.py` — deterministic keyword heuristic + optional LLM. Confidence tiers: auto ≥0.75 (취합요청→draft), review ≥0.45 (확인 필요), else general (일반).
+- `backend/smart_collect/tools/directory_tools.py` — mock 조직도. Recipients come from here, never RAG-guessed.
+- `backend/smart_collect/tools/advanced_rag.py` — Phase B: frontmatter metadata filtering, query rewriting (heuristic+LLM), keyword rerank, and **grounding verification** (`verify_grounding`: 작성항목/제출기한/담당자/규칙근거 → flags ungrounded items). Embedding-free by design.
+- `backend/smart_collect/store.py` — SQLite processed-mail store (dedup by message_id + review queue). DB at `data/inbox_store.db` (gitignored).
+- `backend/smart_collect/inbox_pipeline.py` — `ingest_inbox()` ties it together; auto-classified 취합요청 get a draft + RAG grounding attached to the queue record.
+- Reference corpus: `docs/reference/*.md` (5 docs with `---` frontmatter: 종류/부서/상태/연도).
+
+Endpoints: `POST /api/inbox/ingest`, `GET /api/inbox/queue`, `POST /api/inbox/{message_id}/send` (reuses existing send adapter). CLI: `python backend/cli.py inbox [--no-llm]`. UI: App.tsx lane **05 수신함 자동 분류** (수집 버튼 → 검토 큐 with badges/grounding flags → 승인·발송).
+
+Design guardrails kept: no auto-send (Human-in-the-loop); recipients from directory not RAG; grounding flags shown, not auto-decided; validation logic unchanged.
+
+Tests: `tests/test_inbox.py` (9) + `tests/test_advanced_rag.py` (8). Total suite = 87 passing. Frontend build passing.
+
+Note: this expands beyond the earlier "Gmail is intentionally not app-integrated" scope stance. If updating the presentation/mentor docs, reframe as the upgrade path (do not present both "we don't automate Gmail" and "we built Gmail automation").
+
 ## Git Notes
 
 Before finalizing:

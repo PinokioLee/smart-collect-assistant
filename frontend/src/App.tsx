@@ -5,6 +5,10 @@ import {
   genHardSamples,
   genProjectSamples,
   genSamples,
+  inboxIngest,
+  inboxQueue,
+  inboxSend,
+  type IngestResult,
   getHealth,
   getSampleEmail,
   getStyleMails,
@@ -55,6 +59,12 @@ export default function App() {
   const [reminderAttach, setReminderAttach] = useState<File[]>([]);
   const [reminderSendLoading, setReminderSendLoading] = useState(false);
   const [reminderSendResult, setReminderSendResult] = useState<SendRequestMailResponse | null>(null);
+
+  // 5. 수신함 자동 분류
+  const [inboxLoading, setInboxLoading] = useState(false);
+  const [inbox, setInbox] = useState<IngestResult | null>(null);
+  const [inboxMsg, setInboxMsg] = useState("");
+  const [sendingId, setSendingId] = useState<string | null>(null);
 
   // 4. 공통 항목 일괄 수정
   const [referenceFile, setReferenceFile] = useState<File | null>(null);
@@ -151,6 +161,35 @@ export default function App() {
       );
     } catch (e: any) {
       setError(e?.response?.data?.detail ?? String(e));
+    }
+  }
+
+  async function runInboxIngest() {
+    setInboxLoading(true);
+    setError(null);
+    setInboxMsg("");
+    try {
+      const r = await inboxIngest(true);
+      setInbox(r);
+    } catch (e: any) {
+      setError(e?.response?.data?.detail ?? String(e));
+    } finally {
+      setInboxLoading(false);
+    }
+  }
+
+  async function approveSend(id: string) {
+    setSendingId(id);
+    setError(null);
+    try {
+      await inboxSend(id);
+      const q = await inboxQueue();
+      setInbox((prev) => (prev ? { ...prev, queue: q.queue, by_status: q.counts } : prev));
+      setInboxMsg("초안을 승인하여 발송했습니다 (기본 mock 발송).");
+    } catch (e: any) {
+      setError(e?.response?.data?.detail ?? String(e));
+    } finally {
+      setSendingId(null);
     }
   }
 
@@ -571,6 +610,77 @@ export default function App() {
                     </div>
                   ) : (
                     <div className="placeholder">기준 파일 1개와 수정 대상 파일을 업로드하고 동기화를 누르면<br />공통 컬럼 변경 요약과 수정 파일 다운로드가 표시됩니다.</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ===== 05 수신함 자동 분류 ===== */}
+        <section className="lane">
+          <div className="lane-head">
+            <div className="lane-eyebrow"><span className="lane-no">05</span><span className="lane-kicker">수신함</span></div>
+            <h2 className="lane-title">수신함 자동 분류 · 요청 초안</h2>
+            <p className="lane-desc">수신함 수집 → 취합요청/일반 분류(확신도) → 담당자별 요청 메일 초안 + 근거 검증 → 사람 승인 후 발송</p>
+          </div>
+          <div className="lane-body">
+            <div className="split">
+              <div className="col">
+                <button className="primary block-btn" onClick={runInboxIngest} disabled={inboxLoading}>{inboxLoading ? "수집·분류 중… (LLM 판단 포함)" : "수신함 수집 · 분류"}</button>
+                <p className="hint">기본은 <b>mock 수신함</b>입니다. 실제 Gmail은 <code>EMAIL_READ_MODE=gmail</code> + credentials 설정 시 동작합니다. 자동 발송하지 않고 사람이 승인합니다.</p>
+                {inbox && (
+                  <div className="stats">
+                    <Stat label="수집" value={inbox.fetched} />
+                    <Stat label="신규" value={inbox.processed_new} />
+                    <Stat label="초안" value={inbox.by_status.draft_ready ?? 0} tone="ok" />
+                    <Stat label="확인필요" value={inbox.by_status.needs_review ?? 0} tone={(inbox.by_status.needs_review ?? 0) ? "bad" : "ok"} />
+                  </div>
+                )}
+                {inboxMsg && <p className="hint">✓ {inboxMsg}</p>}
+                {error && <p className="error inline-err">⚠ {error}</p>}
+              </div>
+              <div className="col">
+                <div className="outbox">
+                  <p className="outbox-title">검토 큐</p>
+                  {inbox ? (
+                    <div className="result inbox-queue">
+                      {inbox.queue.map((item) => {
+                        const tierClass = item.status === "draft_ready" ? "ok" : item.status === "needs_review" ? "warn" : item.status === "sent" ? "sent" : "muted";
+                        const label = { draft_ready: "초안 생성", needs_review: "확인 필요", general: "일반", sent: "발송됨", error: "오류" }[item.status] ?? item.status;
+                        return (
+                          <div className={`inbox-item ${tierClass}`} key={item.message_id}>
+                            <div className="inbox-top">
+                              <span className={`ibadge ${tierClass}`}>{label}</span>
+                              <span className="ibadge cls">{item.classification} {Math.round(item.confidence * 100)}%</span>
+                              <span className="isender">{item.sender}</span>
+                            </div>
+                            <p className="isubject">{item.subject}</p>
+                            {item.status === "draft_ready" && (
+                              <div className="idraft">
+                                <p className="field-line"><b>초안</b> · {item.draft_subject}</p>
+                                <p className="field-line"><b>수신자</b> · {item.recipients.map((r) => r.email).join(", ")}</p>
+                                <p className="field-line">
+                                  <b>근거</b> · {Math.round((item.grounding?.score ?? 0) * 100)}%
+                                  {item.sources?.length ? ` · ${item.sources.slice(0, 2).join(", ")}` : ""}
+                                </p>
+                                {item.grounding?.flags?.length > 0 && (
+                                  <p className="iflags">⚠ 확인 필요: {item.grounding.flags.join(", ")}</p>
+                                )}
+                                <button className="primary" onClick={() => approveSend(item.message_id)} disabled={sendingId === item.message_id}>
+                                  {sendingId === item.message_id ? "발송 중…" : "승인 · 발송"}
+                                </button>
+                              </div>
+                            )}
+                            {item.status === "needs_review" && (
+                              <p className="iflags">사람이 취합 요청 여부를 확인해 주세요 (확신도 중간).</p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="placeholder">‘수신함 수집·분류’를 누르면 분류 결과와<br />담당자별 요청 메일 초안, 근거 검증이 표시됩니다.</div>
                   )}
                 </div>
               </div>

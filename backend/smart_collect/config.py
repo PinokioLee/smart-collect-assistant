@@ -52,14 +52,26 @@ class Settings:
     # Email sending
     # mock: 실제 발송 없이 발송 이력만 반환 / gmail: Gmail API OAuth 로 실제 발송
     email_send_mode: str = os.getenv("EMAIL_SEND_MODE", "mock").strip().lower()
+    # Email reading (수신함 수집)
+    # mock: 내장 샘플 수신함 반환 / gmail: Gmail API 로 실제 수신함 읽기(gmail.readonly)
+    email_read_mode: str = os.getenv("EMAIL_READ_MODE", "mock").strip().lower()
     gmail_credentials_file: str = os.getenv("GMAIL_CREDENTIALS_FILE", "")
     gmail_token_file: str = os.getenv(
         "GMAIL_TOKEN_FILE", str(DATA_DIR / "gmail_token.json")
     )
+    # 읽기 스코프(gmail.readonly)는 발송 토큰과 스코프가 달라 별도 토큰 파일을 쓴다.
+    gmail_read_token_file: str = os.getenv(
+        "GMAIL_READ_TOKEN_FILE", str(DATA_DIR / "gmail_read_token.json")
+    )
     gmail_sender: str = os.getenv("GMAIL_SENDER", "")
 
     @property
-    def azure_ready(self) -> bool:
+    def gmail_read_ready(self) -> bool:
+        """실제 Gmail 수신함 읽기 가능 여부(모드=gmail + credentials 존재)."""
+        return self.email_read_mode == "gmail" and bool(self.gmail_credentials_file)
+
+    @property
+    def azure_ready(self) -> bool:  # noqa: D401
         """실제 Azure OpenAI 호출 가능 여부."""
         return bool(self.azure_api_key and self.azure_endpoint and self.azure_deployment)
 

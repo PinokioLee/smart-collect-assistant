@@ -191,6 +191,33 @@ def _sample_excels() -> list[str]:
     ]
 
 
+def cmd_inbox(args: argparse.Namespace) -> int:
+    """수신함 수집·분류·초안 생성 (Phase A). 기본 mock 수신함."""
+    from smart_collect.config import settings as _settings
+    from smart_collect.inbox_pipeline import ingest_inbox
+
+    prefer_llm = not args.no_llm
+    print(f"[INBOX] 수신함 수집 (read_mode={_settings.email_read_mode})")
+    if _settings.email_read_mode != "gmail":
+        print("  * mock 수신함 사용 중 — 실제 Gmail 읽기는 EMAIL_READ_MODE=gmail + credentials 필요\n")
+
+    result = ingest_inbox(prefer_llm=prefer_llm)
+    print(f"수집 {result['fetched']}건 · 신규 처리 {result['processed_new']}건 · "
+          f"중복 건너뜀 {result['skipped']}건")
+    print("상태별:", ", ".join(f"{k}={v}" for k, v in result["by_status"].items()))
+    print("\n[검토 큐]")
+    for r in result["queue"]:
+        tag = {"draft_ready": "초안생성", "needs_review": "확인필요",
+               "general": "일반", "sent": "발송됨", "error": "오류"}.get(r["status"], r["status"])
+        line = (f"  - [{tag}] ({r['classification']} {int(r['confidence']*100)}%) "
+                f"{r['subject']}  ← {r['sender']}")
+        print(_safe_text(line))
+        if r["status"] == "draft_ready":
+            to = ", ".join(c["email"] for c in r["recipients"])
+            print(_safe_text(f"        초안: {r['draft_subject']}  → {to}"))
+    return 0
+
+
 def cmd_update_fields(args: argparse.Namespace) -> int:
     """공통 항목 일괄 수정 (#7)."""
     from smart_collect.tools.excel_tools import update_common_fields
@@ -268,6 +295,10 @@ def main() -> int:
     p_t = sub.add_parser("track", help="제출 현황 추적 + 리마인드")
     p_t.add_argument("--deadline", default="2026-06-12 17:00")
     p_t.set_defaults(func=cmd_track)
+
+    p_in = sub.add_parser("inbox", help="수신함 수집·분류·초안 생성 (Phase A)")
+    p_in.add_argument("--no-llm", action="store_true", help="LLM 미사용(휴리스틱)")
+    p_in.set_defaults(func=cmd_inbox)
 
     p_gen = sub.add_parser("gen-samples", help="샘플 메일/엑셀 생성")
     p_gen.add_argument(
