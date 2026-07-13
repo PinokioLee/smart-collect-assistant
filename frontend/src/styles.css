@@ -78,23 +78,20 @@ body {
 }
 .inline-err { margin-top: 8px; font-size: 12px; padding: 8px 11px; }
 
-/* ---------- 화면: 2열(좌·우 레인), 각 화면이 뷰포트 높이를 채움 ---------- */
+/* ---------- 화면: 섹션을 전체 너비로 한 줄씩 세로 스택(잘림 없음) ---------- */
 .screen {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr;
-  gap: 14px;
-  height: calc(100vh - 96px);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 .topbar { position: sticky; top: 0; z-index: 10; background: var(--canvas); padding: 4px 0 10px; box-shadow: 0 1px 0 var(--line); }
 
-/* ---------- 레인(스테이션): 화면 높이, 내부 스크롤 ---------- */
+/* ---------- 레인(스테이션): 전체 너비, 내용에 맞춘 자연 높이 ---------- */
 .lane {
-  min-height: 0;
+  width: 100%;
   display: flex; flex-direction: column;
   background: var(--surface); border: 1px solid var(--line);
   border-radius: var(--radius); box-shadow: var(--shadow);
-  overflow: hidden;
 }
 .lane-head {
   flex: none;
@@ -116,26 +113,23 @@ body {
 .lane-title { font-size: 16px; font-weight: 800; letter-spacing: -0.015em; margin: 9px 0 0; }
 .lane-desc { margin: 4px 0 0; color: var(--ink-2); font-size: 12px; line-height: 1.5; }
 
-.lane-body { flex: 1 1 auto; min-height: 0; padding: 16px 18px 18px; display: flex; flex-direction: column; }
+.lane-body { padding: 16px 18px 18px; display: flex; flex-direction: column; }
 
-/* 셀 내부 좌우 2단: 왼쪽 컨트롤 | 오른쪽 항상 떠있는 결과/텍스트 박스 */
-.split { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+/* 섹션 내부 좌우 2단: 왼쪽 컨트롤 | 오른쪽 결과/텍스트 박스 (내용 높이) */
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
 .split.wide-left { grid-template-columns: 1.15fr 0.85fr; }
-.col { min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; padding-right: 4px; }
-.col::-webkit-scrollbar { width: 8px; }
-.col::-webkit-scrollbar-thumb { background: #d9d5cc; border-radius: 6px; border: 2px solid var(--surface); }
-.col::-webkit-scrollbar-thumb:hover { background: #c4bfb4; }
+.col { min-width: 0; display: flex; flex-direction: column; }
 .col > .sub:first-child { margin-top: 0; border-top: none; padding-top: 0; }
 
 .outbox {
-  flex: 1 1 auto; min-height: 180px;
+  min-height: 180px;
   border: 1px solid var(--line); background: var(--surface-2);
   border-radius: 12px; padding: 15px;
 }
 .outbox .result, .outbox .block:first-child { border-top: none; margin-top: 0; padding-top: 0; }
 .outbox pre { max-height: none; }
 .placeholder {
-  height: 100%; min-height: 150px;
+  min-height: 150px;
   display: flex; align-items: center; justify-content: center; text-align: center;
   color: var(--ink-3); font-size: 12.5px; line-height: 1.6; padding: 18px;
 }
@@ -294,8 +288,6 @@ pre {
 /* 노트북(≈1024px+)까지 2×2 한 화면 유지. 태블릿/모바일(≤1023px)만 세로 스택 */
 @media (max-width: 1023px) {
   .shell { min-height: 100vh; }
-  .screen { height: auto; grid-template-columns: 1fr; grid-template-rows: none; }
-  .lane { min-height: 60vh; }
   .split, .split.wide-left { grid-template-columns: 1fr; }
 }
 

@@ -395,9 +395,9 @@ export default function App() {
 
       <div className="screen">
         {/* ===== 01 요청 ===== */}
-        <section className="lane">
+        <section className="lane" style={{ order: 2 }}>
           <div className="lane-head">
-            <div className="lane-eyebrow"><span className="lane-no">01</span><span className="lane-kicker">요청</span></div>
+            <div className="lane-eyebrow"><span className="lane-no">02</span><span className="lane-kicker">요청</span></div>
             <h2 className="lane-title">취합 요청 메일 보내기</h2>
             <p className="lane-desc">받은 요청 → 내 스타일 초안 → 양식 첨부·발송</p>
           </div>
@@ -461,9 +461,9 @@ export default function App() {
         </section>
 
         {/* ===== 02 검증 ===== */}
-        <section className="lane">
+        <section className="lane" style={{ order: 3 }}>
           <div className="lane-head">
-            <div className="lane-eyebrow"><span className="lane-no">02</span><span className="lane-kicker">검증</span></div>
+            <div className="lane-eyebrow"><span className="lane-no">03</span><span className="lane-kicker">검증</span></div>
             <h2 className="lane-title">제출 엑셀 검증 · 병합</h2>
             <p className="lane-desc">회신 첨부 검증 → 정상만 병합 → 취합 엑셀 다운로드</p>
           </div>
@@ -584,13 +584,10 @@ export default function App() {
           </div>
         </section>
 
-      </div>
-
-      <div className="screen">
         {/* ===== 03 추적 ===== */}
-        <section className="lane">
+        <section className="lane" style={{ order: 4 }}>
           <div className="lane-head">
-            <div className="lane-eyebrow"><span className="lane-no">03</span><span className="lane-kicker">추적</span></div>
+            <div className="lane-eyebrow"><span className="lane-no">04</span><span className="lane-kicker">추적</span></div>
             <h2 className="lane-title">제출 현황 · 리마인드</h2>
             <p className="lane-desc">제출 현황 확인 · 미제출자 리마인드 초안</p>
           </div>
@@ -637,9 +634,9 @@ export default function App() {
         </section>
 
         {/* ===== 04 수정 ===== */}
-        <section className="lane">
+        <section className="lane" style={{ order: 5 }}>
           <div className="lane-head">
-            <div className="lane-eyebrow"><span className="lane-no">04</span><span className="lane-kicker">수정</span></div>
+            <div className="lane-eyebrow"><span className="lane-no">05</span><span className="lane-kicker">수정</span></div>
             <h2 className="lane-title">공통 항목 일괄 수정</h2>
             <p className="lane-desc">기준 파일의 프로젝트 공통 정보로 대상 파일 동기화 (원본 보존)</p>
           </div>
@@ -688,9 +685,9 @@ export default function App() {
         </section>
 
         {/* ===== 05 수신함 자동 분류 ===== */}
-        <section className="lane">
+        <section className="lane" style={{ order: 1 }}>
           <div className="lane-head">
-            <div className="lane-eyebrow"><span className="lane-no">05</span><span className="lane-kicker">수신함</span></div>
+            <div className="lane-eyebrow"><span className="lane-no">01</span><span className="lane-kicker">수신함</span></div>
             <h2 className="lane-title">수신함 자동 분류 · 요청 초안</h2>
             <p className="lane-desc">수신함 수집 → 취합요청/일반 분류(확신도) → 담당자별 요청 메일 초안 + 근거 검증 → 사람 승인 후 발송</p>
           </div>
