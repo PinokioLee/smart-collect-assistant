@@ -19,7 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile  # noqa: E402
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from fastapi.responses import FileResponse  # noqa: E402
 
@@ -36,6 +36,7 @@ from smart_collect.sample_data import (  # noqa: E402
 from smart_collect.state import AgentState  # noqa: E402
 from smart_collect.tools import rag_tools  # noqa: E402
 from smart_collect import store  # noqa: E402
+from smart_collect import scheduler as sched_mod  # noqa: E402
 from smart_collect.inbox_pipeline import ingest_inbox  # noqa: E402
 from smart_collect.tools.email_tools import EmailSendRequest, send_email  # noqa: E402
 
@@ -147,6 +148,34 @@ def inbox_queue(status: str | None = None) -> dict:
         "counts": store.counts_by_status(),
         "read_mode": settings.email_read_mode,
     }
+
+
+@app.on_event("startup")
+def _start_scheduler() -> None:
+    """앱 시작 시 저장된 스케줄로 자동 수집 스케줄러를 켠다."""
+    sched_mod.start()
+
+
+@app.get("/api/schedule")
+def get_schedule() -> dict:
+    """현재 자동 수집 스케줄 설정 + 다음 실행 예정 + 마지막 실행 결과."""
+    return sched_mod.status()
+
+
+@app.post("/api/schedule")
+async def set_schedule(request: Request) -> dict:
+    """화면에서 지정한 스케줄을 저장·반영한다. (자동 발송은 하지 않음)"""
+    body = await request.json()
+    try:
+        return sched_mod.apply(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/schedule/run-now")
+def schedule_run_now() -> dict:
+    """스케줄과 무관하게 지금 즉시 1회 수집한다."""
+    return {"result": sched_mod.run_now(), "status": sched_mod.status()}
 
 
 @app.post("/api/inbox/{message_id}/send")

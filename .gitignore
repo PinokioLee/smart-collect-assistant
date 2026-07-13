@@ -23,8 +23,9 @@ data/samples/
 data/style_samples/
 data/traces/*
 !data/traces/.gitkeep
-# 수신함 파이프라인 런타임 저장소(SQLite)
+# 수신함 파이프라인 런타임 저장소(SQLite) + 스케줄 설정
 data/*.db
+data/schedule_config.json
 !data/merged_files/.gitkeep
 !data/error_reports/.gitkeep
 # 단, 실측 벤치마크 지표(JSON)는 추적 (발표 근거)

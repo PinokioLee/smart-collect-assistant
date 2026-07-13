@@ -328,3 +328,26 @@ pre {
   margin: 6px 0 0; font-size: 12px; font-weight: 600; color: var(--warn);
   background: var(--warn-soft); border: 1px solid #f0dcc0; border-radius: 8px; padding: 6px 10px;
 }
+
+/* ===== 자동 수집 스케줄 ===== */
+.sched { margin-top: 12px; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--surface); padding: 12px 14px; display: flex; flex-direction: column; gap: 9px; }
+.sched-head { display: flex; align-items: center; justify-content: space-between; }
+.sched-toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.sched-badge { font-family: var(--mono); font-size: 10.5px; font-weight: 700; padding: 2px 9px;
+  border-radius: 999px; background: var(--surface-2); color: var(--ink-3); border: 1px solid var(--line); }
+.sched-badge.on { background: var(--brand-soft); color: var(--brand-ink); border-color: #bfe0cf; }
+.sched-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-2); flex-wrap: wrap; }
+.sched-row label { font-weight: 600; color: var(--ink); min-width: 34px; }
+.sched select, .sched input[type="time"], .sched input[type="number"] {
+  font-family: var(--sans); font-size: 13px; padding: 5px 8px; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--surface-2); color: var(--ink); }
+.sched-times { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.sched-time { display: inline-flex; align-items: center; gap: 3px; }
+.tiny { border: 1px solid var(--line); background: var(--surface-2); color: var(--ink-2);
+  border-radius: 7px; padding: 4px 8px; font-size: 12px; cursor: pointer; font-family: var(--sans); }
+.tiny.add { color: var(--brand-ink); border-color: #bfe0cf; background: var(--brand-soft); font-weight: 600; }
+.sched-actions { display: flex; gap: 8px; margin-top: 2px; }
+.sched-actions .primary, .sched-actions .ghost { padding: 7px 14px; font-size: 12.5px; }
+.sched-info { border-top: 1px dashed var(--line); padding-top: 8px; display: flex; flex-direction: column; gap: 2px; }
+.sched-info .hint { margin: 0; }

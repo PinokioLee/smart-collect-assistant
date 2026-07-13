@@ -5,6 +5,9 @@ openpyxl==3.1.5
 pydantic==2.13.4
 python-dotenv==1.2.2
 
+# 수신함 자동 수집 스케줄러 (Phase C)
+apscheduler>=3.10,<4
+
 # 에이전트 오케스트레이션 (Phase 2)
 langgraph==1.2.6
 langchain==1.3.10

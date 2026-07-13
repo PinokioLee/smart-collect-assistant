@@ -275,6 +275,41 @@ export async function inboxSend(
   return data;
 }
 
+// ---------- 자동 수집 스케줄 (Phase C) ----------
+
+export interface ScheduleConfig {
+  enabled: boolean;
+  mode: "interval" | "times" | "weekly";
+  interval_hours: number;
+  times: string[];
+  weekday: number;
+  weekly_time: string;
+}
+
+export interface ScheduleStatus {
+  config: ScheduleConfig;
+  running: boolean;
+  next_runs: string[];
+  last_run: string | null;
+  last_summary: { fetched: number; processed_new: number; by_status: Record<string, number> } | null;
+  last_error: string | null;
+}
+
+export async function getSchedule(): Promise<ScheduleStatus> {
+  const { data } = await client.get<ScheduleStatus>("/schedule");
+  return data;
+}
+
+export async function setSchedule(cfg: Partial<ScheduleConfig>): Promise<ScheduleStatus> {
+  const { data } = await client.post<ScheduleStatus>("/schedule", cfg);
+  return data;
+}
+
+export async function scheduleRunNow(): Promise<{ result: any; status: ScheduleStatus }> {
+  const { data } = await client.post("/schedule/run-now");
+  return data;
+}
+
 export interface SyncCommonFieldsResponse extends UpdateFieldsResponse {
   common_columns: string[];
   key_column: string;

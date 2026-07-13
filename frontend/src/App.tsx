@@ -8,7 +8,11 @@ import {
   inboxIngest,
   inboxQueue,
   inboxSend,
+  getSchedule,
+  setSchedule,
+  scheduleRunNow,
   type IngestResult,
+  type ScheduleStatus,
   getHealth,
   getSampleEmail,
   getStyleMails,
@@ -65,6 +69,72 @@ export default function App() {
   const [inbox, setInbox] = useState<IngestResult | null>(null);
   const [inboxMsg, setInboxMsg] = useState("");
   const [sendingId, setSendingId] = useState<string | null>(null);
+
+  // 5-b. 자동 수집 스케줄
+  const [sched, setSched] = useState<ScheduleStatus | null>(null);
+  const [schedEnabled, setSchedEnabled] = useState(false);
+  const [schedMode, setSchedMode] = useState<"times" | "interval" | "weekly">("times");
+  const [schedTimes, setSchedTimes] = useState<string[]>(["09:00", "14:00", "19:00"]);
+  const [schedInterval, setSchedInterval] = useState(1);
+  const [schedWeekday, setSchedWeekday] = useState(0);
+  const [schedWeeklyTime, setSchedWeeklyTime] = useState("09:00");
+  const [schedSaving, setSchedSaving] = useState(false);
+
+  function applyStatus(s: ScheduleStatus) {
+    setSched(s);
+    setSchedEnabled(s.config.enabled);
+    setSchedMode(s.config.mode);
+    setSchedTimes(s.config.times?.length ? s.config.times : ["09:00"]);
+    setSchedInterval(s.config.interval_hours || 1);
+    setSchedWeekday(s.config.weekday ?? 0);
+    setSchedWeeklyTime(s.config.weekly_time || "09:00");
+  }
+
+  useEffect(() => {
+    getSchedule().then(applyStatus).catch(() => {});
+  }, []);
+
+  async function saveSchedule() {
+    setSchedSaving(true);
+    setError(null);
+    try {
+      const s = await setSchedule({
+        enabled: schedEnabled,
+        mode: schedMode,
+        interval_hours: schedInterval,
+        times: schedTimes,
+        weekday: schedWeekday,
+        weekly_time: schedWeeklyTime,
+      });
+      applyStatus(s);
+      setInboxMsg("스케줄을 저장했습니다.");
+    } catch (e: any) {
+      setError(e?.response?.data?.detail ?? String(e));
+    } finally {
+      setSchedSaving(false);
+    }
+  }
+
+  async function runScheduleNow() {
+    setSchedSaving(true);
+    try {
+      const r = await scheduleRunNow();
+      applyStatus(r.status);
+      const q = await inboxQueue();
+      setInbox({
+        fetched: r.status.last_summary?.fetched ?? 0,
+        processed_new: r.status.last_summary?.processed_new ?? 0,
+        skipped: 0,
+        by_status: q.counts,
+        queue: q.queue,
+        read_mode: q.read_mode,
+      });
+    } catch (e: any) {
+      setError(e?.response?.data?.detail ?? String(e));
+    } finally {
+      setSchedSaving(false);
+    }
+  }
 
   // 4. 공통 항목 일괄 수정
   const [referenceFile, setReferenceFile] = useState<File | null>(null);
@@ -628,7 +698,62 @@ export default function App() {
             <div className="split">
               <div className="col">
                 <button className="primary block-btn" onClick={runInboxIngest} disabled={inboxLoading}>{inboxLoading ? "수집·분류 중… (LLM 판단 포함)" : "수신함 수집 · 분류"}</button>
-                <p className="hint">기본은 <b>mock 수신함</b>입니다. 실제 Gmail은 <code>EMAIL_READ_MODE=gmail</code> + credentials 설정 시 동작합니다. 자동 발송하지 않고 사람이 승인합니다.</p>
+                <p className="hint">실제 Gmail은 <code>EMAIL_READ_MODE=gmail</code> + credentials 설정 시 동작. 자동 발송하지 않고 사람이 승인합니다.</p>
+
+                {/* 자동 수집 스케줄 */}
+                <div className="sched">
+                  <div className="sched-head">
+                    <label className="sched-toggle">
+                      <input type="checkbox" checked={schedEnabled} onChange={(e) => setSchedEnabled(e.target.checked)} />
+                      <b>자동 수집 스케줄</b>
+                    </label>
+                    <span className={`sched-badge${schedEnabled ? " on" : ""}`}>{schedEnabled ? "켜짐" : "꺼짐"}</span>
+                  </div>
+                  <div className="sched-row">
+                    <label>주기</label>
+                    <select value={schedMode} onChange={(e) => setSchedMode(e.target.value as any)}>
+                      <option value="times">매일 지정 시각</option>
+                      <option value="interval">N시간마다</option>
+                      <option value="weekly">매주</option>
+                    </select>
+                  </div>
+                  {schedMode === "times" && (
+                    <div className="sched-times">
+                      {schedTimes.map((t, i) => (
+                        <span className="sched-time" key={i}>
+                          <input type="time" value={t} onChange={(e) => { const n = [...schedTimes]; n[i] = e.target.value; setSchedTimes(n); }} />
+                          {schedTimes.length > 1 && <button className="tiny" onClick={() => setSchedTimes(schedTimes.filter((_, j) => j !== i))}>×</button>}
+                        </span>
+                      ))}
+                      <button className="tiny add" onClick={() => setSchedTimes([...schedTimes, "12:00"])}>+ 시각</button>
+                    </div>
+                  )}
+                  {schedMode === "interval" && (
+                    <div className="sched-row">
+                      <input type="number" min={1} max={168} value={schedInterval} onChange={(e) => setSchedInterval(Number(e.target.value))} style={{ width: 70 }} />
+                      <span>시간마다</span>
+                    </div>
+                  )}
+                  {schedMode === "weekly" && (
+                    <div className="sched-row">
+                      <select value={schedWeekday} onChange={(e) => setSchedWeekday(Number(e.target.value))}>
+                        {["월", "화", "수", "목", "금", "토", "일"].map((d, i) => <option key={i} value={i}>{d}요일</option>)}
+                      </select>
+                      <input type="time" value={schedWeeklyTime} onChange={(e) => setSchedWeeklyTime(e.target.value)} />
+                    </div>
+                  )}
+                  <div className="sched-actions">
+                    <button className="primary" onClick={saveSchedule} disabled={schedSaving}>{schedSaving ? "저장 중…" : "스케줄 저장"}</button>
+                    <button className="ghost" onClick={runScheduleNow} disabled={schedSaving}>지금 실행</button>
+                  </div>
+                  {sched && (
+                    <div className="sched-info">
+                      {sched.next_runs.length > 0 && <p className="hint">다음 실행: {sched.next_runs.slice(0, 3).join("  ·  ")}</p>}
+                      {sched.last_run && <p className="hint">마지막 실행: {sched.last_run}{sched.last_summary ? ` · 신규 ${sched.last_summary.processed_new}건` : ""}</p>}
+                      {sched.last_error && <p className="error inline-err">⚠ {sched.last_error}</p>}
+                    </div>
+                  )}
+                </div>
                 {inbox && (
                   <div className="stats">
                     <Stat label="수집" value={inbox.fetched} />
