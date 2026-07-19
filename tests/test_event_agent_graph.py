@@ -370,3 +370,56 @@ def test_19_outbound_gmail_thread_can_find_collection_job(tmp_path):
     job_store.update_job("SC-JOB", outbound_thread_id="GMAIL-OUTBOUND-THREAD", db_path=db)
     found = job_store.find_job_for_message("제목이 변경된 질문", "GMAIL-OUTBOUND-THREAD", db)
     assert found and found["job_id"] == "SC-JOB"
+
+
+def test_20_gmail_submission_runs_safe_self_correction_and_merges_corrected_copy(
+    tmp_path, monkeypatch,
+):
+    db = tmp_path / "db.sqlite"
+    template = tmp_path / "quality_template.xlsx"
+    pd.DataFrame(columns=["부서명", "담당자", "제출일자", "긴급도"]).to_excel(
+        template, index=False,
+    )
+    job_store.create_job({
+        "job_id": "SC-QUALITY", "source_thread_id": "THREAD-QUALITY",
+        "title": "품질 취합", "deadline": "2026-07-30 17:00",
+        "recipients": [{"name": "사용자", "dept": "영업", "email": "user@company.com"}],
+        "required_fields": ["부서명", "담당자", "제출일자", "긴급도"],
+        "validation_rule": {
+            "required_columns": ["부서명", "담당자", "제출일자", "긴급도"],
+            "date_columns": ["제출일자"], "number_columns": [],
+            "code_rules": {"긴급도": ["상", "중", "하"]}, "duplicate_keys": [],
+        },
+        "template_path": str(template), "status": "collecting",
+    }, db)
+    submitted = tmp_path / "quality_submission.xlsx"
+    pd.DataFrame([{
+        "부서명": "영업", "담당자": "홍길동",
+        "제출일자": "2026/07/20", "긴급도": "매우 급함",
+    }]).to_excel(submitted, index=False)
+    monkeypatch.setattr(autonomous_graph, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(
+        autonomous_graph, "classify_message",
+        lambda *a, **k: _cls("collection", "submission"),
+    )
+
+    record = autonomous_graph.run_mail_event(
+        InboxMessage(
+            id="QUALITY-SUB", thread_id="THREAD-QUALITY", sender="user@company.com",
+            subject="[SC-QUALITY] 제출합니다", body="자가교정 가능한 제출본입니다.",
+            attachments=[submitted.name],
+            attachment_paths=[str(submitted)],
+        ),
+        db_path=db, prefer_llm=False,
+    )
+
+    quality = record["artifacts"]["quality_pipeline"]
+    assert record["status"] == "submission_accepted"
+    assert quality["rule_source"] == "job_contract"
+    assert quality["self_correction"]["accepted"] is True
+    assert quality["self_correction"]["applied_corrections"] == 2
+    corrected_path = Path(quality["corrected_submission_paths"][0])
+    assert corrected_path.exists() and corrected_path != submitted
+    merged = pd.read_excel(record["artifacts"]["merged_file"], dtype=str)
+    assert merged.loc[0, "제출일자"] == "2026-07-20"
+    assert merged.loc[0, "긴급도"] == "상"

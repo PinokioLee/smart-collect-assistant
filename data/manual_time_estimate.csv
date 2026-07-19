@@ -11,3 +11,5 @@ run,participant,scenario_count,active_minutes,measured_at,notes
 10,ESTIMATE,1,3.5,2026-07-20,analytical-estimate:correction
 11,ESTIMATE,1,1.0,2026-07-20,analytical-estimate:injection
 12,ESTIMATE,1,5.0,2026-07-20,analytical-estimate:deadline-reminder
+13,ESTIMATE,1,2.0,2026-07-20,analytical-estimate:missing-attachment
+14,ESTIMATE,1,4.0,2026-07-20,analytical-estimate:corrupt-workbook

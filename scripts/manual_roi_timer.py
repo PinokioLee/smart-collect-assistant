@@ -48,7 +48,7 @@ def append_measurement(
 def main() -> int:
     parser = argparse.ArgumentParser(description="Smart Collect 수작업 Before 시간 실측")
     parser.add_argument("--participant", required=True, help="익명 참여자 ID (예: P01)")
-    parser.add_argument("--scenario-count", type=int, default=12)
+    parser.add_argument("--scenario-count", type=int, default=14)
     parser.add_argument("--notes", default="")
     parser.add_argument("--output", default="data/manual_time_measurements.csv")
     args = parser.parse_args()

@@ -1,4 +1,4 @@
-"""Tree of Thoughts 기반 검증 규칙 선택 (Yao et al., 2023).
+"""ToT에서 착안한 결정론적 다중 후보 검증 규칙 탐색.
 
 문제: 메일에서 추출한 '작성 항목'만으로 검증 규칙을 1개로 확정하면, 작성자마다
 양식이 조금씩 달라 실제 제출 엑셀의 컬럼과 어긋날 수 있다(필수 컬럼 과잉/누락).
@@ -6,6 +6,10 @@
 접근: 단일 규칙 생성 대신 **서로 다른 엄격도의 후보 규칙 3개를 생성(Branch)**하고,
 실제 업로드된 엑셀 헤더와의 정합성을 **결정론적 게이트로 평가(Evaluate)**한 뒤
 최고 점수 후보를 선택(Select)한다. 비결정성을 제거하고 데이터 정합성을 보장한다.
+
+중요: 후보는 LLM이 자유롭게 생성한 thought가 아니라 코드가 정의한 규칙 후보다.
+따라서 Yao et al.(2023)의 Tree of Thoughts 완전 구현이라고 주장하지 않고,
+그 탐색 패턴에서 착안한 ``deterministic multi-candidate search``로 표현한다.
 
   BRANCH ×3  →  EVALUATE(coverage gate)  →  SELECT(best)
 """
@@ -48,7 +52,7 @@ def _dup_keys(fields: list[str]) -> list[str]:
 def generate_candidates(
     req: ExtractedRequirements, cautions_text: str
 ) -> list[RuleCandidate]:
-    """엄격도가 다른 검증 규칙 후보 3개를 생성한다 (ToT Branch)."""
+    """엄격도가 다른 검증 규칙 후보 3개를 결정론적으로 생성한다."""
     fields = req.required_fields or []
 
     # A. Strict: 모든 작성 항목을 필수로
@@ -110,24 +114,31 @@ def evaluate_candidate(cand: RuleCandidate, actual_columns: set[str]) -> RuleCan
 def select_rules_with_tot(
     req: ExtractedRequirements, cautions_text: str, actual_columns: set[str]
 ) -> tuple[ValidationRule, list[str]]:
-    """ToT 로 검증 규칙을 선택하고 고수준 추론 로그를 함께 반환한다.
+    """이전 API 호환용 별칭. 새 코드는 ``select_rules_with_candidates``를 사용한다."""
+    return select_rules_with_candidates(req, cautions_text, actual_columns)
+
+
+def select_rules_with_candidates(
+    req: ExtractedRequirements, cautions_text: str, actual_columns: set[str]
+) -> tuple[ValidationRule, list[str]]:
+    """결정론적 다중 후보 탐색으로 규칙과 평가 로그를 반환한다.
 
     Returns: (선택된 ValidationRule, reasoning_log 라인들)
     """
     candidates = generate_candidates(req, cautions_text)
     log: list[str] = []
     log.append(
-        f"[ToT] BRANCH ×{len(candidates)} — 검증 규칙 후보 생성 "
+        f"[CANDIDATE SEARCH] BRANCH ×{len(candidates)} — 검증 규칙 후보 생성 "
         f"({', '.join(c.name for c in candidates)})"
     )
     for c in candidates:
         evaluate_candidate(c, actual_columns)
     scores = " ".join(f"{c.name}={c.score}" for c in candidates)
-    log.append(f"[ToT] EVALUATE — coverage 게이트 채점: {scores}")
+    log.append(f"[CANDIDATE SEARCH] EVALUATE — coverage 게이트 채점: {scores}")
 
     best = max(candidates, key=lambda c: (c.score, len(c.rule.required_columns)))
     log.append(
-        f"[ToT] SELECT — '{best.name}' 채택 "
+        f"[CANDIDATE SEARCH] SELECT — '{best.name}' 채택 "
         f"(coverage={best.coverage:.2f}, penalty={best.penalty:.2f}, "
         f"필수컬럼={best.rule.required_columns})"
     )

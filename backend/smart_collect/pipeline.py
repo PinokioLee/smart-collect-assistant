@@ -18,7 +18,7 @@ from .tools.requirement_tools import (
     build_validation_rules,
 )
 from .tools.self_correction import run_self_correction
-from .tools.tot_rules import select_rules_with_tot
+from .tools.tot_rules import select_rules_with_candidates
 
 
 def node_requirement_analysis(state: AgentState, *, prefer_llm: bool = True) -> AgentState:
@@ -49,7 +49,7 @@ def node_requirement_analysis(state: AgentState, *, prefer_llm: bool = True) -> 
 
 
 def node_supervisor_plan(state: AgentState, *, use_llm: bool = True) -> AgentState:
-    """Supervisor Agent: LLM 실행 계획(판단) + ToT 검증 규칙 선택(결정론) + RAG 분기."""
+    """Supervisor Agent: LLM 계획 + 결정론적 다중 후보 규칙 탐색 + RAG 분기."""
     state.handoff("Supervisor Agent", "PlanningNode")
     req = state.extracted_requirements
     if req is None:
@@ -58,19 +58,19 @@ def node_supervisor_plan(state: AgentState, *, use_llm: bool = True) -> AgentSta
 
     # Foresight: 실행 전 5단계 계획을 명시 (고수준 추론 로그)
     state.reason(
-        "[PLAN] 5단계 계획 — 1)규칙선택(ToT) 2)검증 3)자가교정(Self-Refine) "
+        "[PLAN] 5단계 계획 — 1)다중후보 규칙선택 2)검증 3)자가교정(Self-Refine) "
         "4)정상병합 5)보고서. 마감일/필수컬럼/코드값 기준 사전 점검."
     )
     state.step("PLAN", "5단계 실행 계획 수립 (규칙선택→검증→자가교정→병합→보고)")
 
-    # 실제 업로드 엑셀 헤더를 읽는다 (LLM 계획 + ToT 평가 공통 입력)
+    # 실제 업로드 엑셀 헤더를 읽는다 (LLM 계획 + 후보 규칙 평가 공통 입력)
     actual_columns: set[str] = set()
     try:
         loaded = ex.load_excel_files(state.uploaded_excel_files)
         state._loaded_files = loaded
         for f in loaded:
             actual_columns.update(f.df.columns)
-    except Exception:  # noqa: BLE001 - 파일 없으면 ToT 없이 휴리스틱
+    except Exception:  # noqa: BLE001 - 파일 없으면 후보 탐색 없이 휴리스틱
         pass
 
     # LLM Supervisor 판단: 검증 전략·리스크를 '계획'(검증은 코드가 결정론적으로 수행)
@@ -114,16 +114,17 @@ def node_supervisor_plan(state: AgentState, *, use_llm: bool = True) -> AgentSta
                 "template_id": state.template_id,
             },
         )
-    # ToT: 실제 업로드 엑셀 헤더로 후보 규칙 3개를 정합성 점수로 평가·선택 (결정론)
+    # 실제 업로드 헤더로 코드 정의 후보 3개를 정합성 점수로 평가·선택한다.
+    # 이는 ToT의 탐색 패턴에서 착안했지만 LLM thought branch 완전 구현은 아니다.
     elif actual_columns:
-        rule, tot_log = select_rules_with_tot(
+        rule, candidate_log = select_rules_with_candidates(
             req, "\n".join(req.cautions), actual_columns
         )
         state.validation_rules = rule
-        for line in tot_log:
+        for line in candidate_log:
             state.reason(line)
         state.step(
-            "BRANCH", "ToT 검증 규칙 후보 3개 생성 (Strict/Balanced/Loose)"
+            "BRANCH", "결정론적 검증 규칙 후보 3개 생성 (Strict/Balanced/Loose)"
         )
         state.step(
             "SELECT",

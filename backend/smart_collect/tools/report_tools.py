@@ -110,7 +110,7 @@ def generate_result_summary(state: AgentState) -> str:
     if state.langfuse_trace_id:
         lines.append(f"  - langfuse_trace_id: {state.langfuse_trace_id}")
 
-    # 7. 고수준 추론 로그 (ToT / Self-Correction / Planning)
+    # 7. 고수준 실행 로그 (후보 탐색 / Self-Correction / Planning)
     if state.reasoning_log:
         lines.append("\n[고수준 추론 로그]")
         for r in state.reasoning_log:

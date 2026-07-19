@@ -159,7 +159,7 @@ def cmd_demo(_args: argparse.Namespace) -> int:
 
     print("\n" + "=" * 60)
     print("  [시나리오] 2026년 6월 시스템 개선요청 취합 메일 + 부서 엑셀 3개")
-    print("  -> 메일 분석 -> ToT 규칙선택 -> 검증 -> Self-Correction -> 병합/보고")
+    print("  -> 메일 분석 -> 다중 후보 규칙선택 -> 검증 -> Self-Correction -> 병합/보고")
     print("=" * 60)
 
     state = run_collection_graph(

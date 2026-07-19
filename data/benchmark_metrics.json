@@ -17,17 +17,16 @@
     "runs": 10,
     "error_count_mean": 10,
     "error_count_stdev": 0.0,
-    "time_mean_ms": 8.14,
-    "time_stdev_ms": 0.789
+    "time_mean_ms": 13.14,
+    "time_stdev_ms": 0.987
   },
   "speed": {
     "total_rows": 46,
-    "auto_seconds": 0.0569,
-    "throughput_rows_per_sec": 808.0,
-    "manual_estimate_seconds": 930,
-    "manual_estimate_min": 15.5,
-    "speedup_x": 16341.0,
-    "reduction_pct": 99.99
+    "auto_seconds": 0.1342,
+    "throughput_rows_per_sec": 343.0,
+    "runs": 20,
+    "evidence": "measured_agent_execution_only",
+    "manual_comparison_available": false
   },
   "self_correction": {
     "errors_before": 10,
@@ -37,7 +36,7 @@
     "error_rows_recovered": 6,
     "rework_reduction_pct": 60.0
   },
-  "tot_discrimination": {
+  "candidate_search_discrimination": {
     "scenario": "한 양식에서 '요청사유' 컬럼 누락(드리프트)",
     "candidate_scores": {
       "A.Strict": 0.786,

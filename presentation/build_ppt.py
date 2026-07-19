@@ -2,7 +2,7 @@
 
 수치 출처:
   data/benchmark_metrics.json         — 검출 F1 100% / 0.08초·500행+/초 / 자가교정 100%·재작업 60%↓ /
-                                         재현성 표준편차 0 / ToT Strict 0.786 vs Balanced 1.0(오탐 1건 회피)
+                                         재현성 표준편차 0 / 결정론 후보탐색 Strict 0.786 vs Balanced 1.0(오탐 1건 회피)
   data/llm_vs_rule_benchmark.json     — LLM 직접판단(A) vs 규칙기반(B), 46행/오류10건, LLM 5회 반복
   data/llm_vs_rule_benchmark_large.json — 동일 비교, 130행/오류26건 규모 (실무 규모 재검증)
 
@@ -79,7 +79,7 @@ SPEAKER_NOTES = {
         "기술 선택 셋. ① LangGraph — 단일 에이전트·단순 Chain으로는 분석·검증·교정·보고의 책임 "
         "분리와 상태 관리가 어렵습니다. 조건분기로 7개 노드를 오케스트레이션했습니다.\n"
         "② Supervisor는 LLM이 실제 업로드 컬럼을 보고 검증 전략과 리스크를 계획합니다. 예를 들어 "
-        "'긴급도 코드값이 흔들릴 수 있다'를 미리 지목합니다. 규칙 선택 자체는 Tree of Thoughts로 후보 "
+        "'긴급도 코드값이 흔들릴 수 있다'를 미리 지목합니다. 규칙 선택 자체는 ToT 탐색 패턴에서 착안한 후보 "
         "3개를 만들어 결정론적으로 고릅니다 — 항목을 전부 필수로 강제(Strict)하면 드리프트에서 오탐이 나서 "
         "(실측 Strict 0.786점·오탐 1건 vs Balanced 1.0점·오탐 0건) Balanced를 택했습니다. Yao 2023 참고.\n"
         "③ Self-Correction이 이 프로젝트의 에이전틱 핵심입니다. 고칠 수 있는 오류에 대해 LLM이 교정값을 "
@@ -102,7 +102,7 @@ SPEAKER_NOTES = {
         "표준편차 0으로 완전히 결정론적이었습니다. 비용도 추가로 들지 않습니다.\n"
         "두 번째 사례는 검증 규칙 선택입니다. 메일에서 뽑은 항목을 전부 필수컬럼으로 강제하는 "
         "Strict 방식은 양식이 부서마다 다르면 오탐을 냈습니다 — 점수 0.786, 오탐 컬럼 1개. Tree of "
-        "Thoughts로 Strict·Balanced·Loose 후보 3개를 만들어 실제 파일과 비교 평가하는 ToT 방식으로 "
+        "Strict·Balanced·Loose 코드 정의 후보 3개를 실제 파일과 비교 평가하는 결정론 방식으로 "
         "바꾸자 점수 1.0, 오탐 0건이 됐습니다.\n"
         "정리하면, 정확도가 같다면 비용·속도·재현성이 유리한 쪽을 선택해야 한다는 것이 이번 과제의 "
         "핵심 판단이었습니다. 그래서 판단이 필요한 곳 — 검증 전략 계획과 교정값 제안 — 에는 LLM을 쓰고, "
@@ -173,12 +173,12 @@ def main() -> None:
         "어떻게 구현했는지 핵심 포인트를 1~2줄로 작성하세요.":
             "State 기반 조건분기로 7개 노드를 오케스트레이션하고, 기준 검색은 선택 기능으로 분리했습니다.",
     })
-    replace_runs(nm["Text 20"], {"기술명 (예: RAG + Vector DB)": "ToT + Self-Correction (LLM 제안→코드 검증)"})
+    replace_runs(nm["Text 20"], {"기술명 (예: RAG + Vector DB)": "후보 탐색 + Self-Correction (LLM 제안→코드 검증)"})
     replace_runs(nm["Text 21"], {
         "Fine-tuning, 키워드 검색 등 대안 대비 RAG를 선택한 근거를 서술하세요.":
             "LLM이 검증전략 계획·교정값을 제안하면, 코드가 허용값·재검증 게이트로 확정(환각 차단).",
         "검색 정확도, 응답 속도 등 측정 가능한 개선 지표를 포함하세요.":
-            "ToT 규칙선택 0.786→1.0(오탐 1→0건) · 교정은 재검증서 오류 줄 때만 채택 (Yao·Madaan 2023).",
+            "결정론 후보선택 0.786→1.0(오탐 1→0건) · 교정은 재검증서 오류 줄 때만 채택 (Yao·Madaan 2023에서 착안).",
     })
     replace_runs(nm["Text 26"], {"기술명 (예: Azure OpenAI / Whisper)": "규칙기반 검증 (pandas/openpyxl)"})
     replace_runs(nm["Text 27"], {
@@ -199,7 +199,7 @@ def main() -> None:
 
     # ---------- 슬라이드 3: 핵심 기술 과제 (slide 4) ----------
     # 실측 근거: data/llm_vs_rule_benchmark.json (46행/오류10건), data/llm_vs_rule_benchmark_large.json
-    # (130행/오류26건), data/benchmark_metrics.json 의 tot_discrimination.
+    # (130행/오류26건), data/benchmark_metrics.json 의 candidate_search_discrimination.
     nm = name_map(slides[3])
     replace_runs(nm["Text 9"], {
         "단순 구현으로 해결되지 않았던 핵심 기술 과제를 제시하세요.":
@@ -209,14 +209,14 @@ def main() -> None:
     })
     replace_runs(nm["Text 13"], {
         "예: Planner Agent가 먼저 전체 계획을 시뮬레이션(MCP 핵심)하고, LangGraph Self-Correction 루프로 계획을 동적 수정하는 Deep Reasoning 구조를 설계했습니다.":
-            "LLM은 판단(계획·제안), 코드는 검증·확정으로 분리. ① 검증: LLM 직접판단(A) 실측 후 규칙기반(B) 전환 ② 규칙선택: ToT 후보 비교 ③ 자가교정: LLM 제안→코드 검증 후 채택",
+            "LLM은 판단(계획·제안), 코드는 검증·확정으로 분리. ① 검증: LLM 직접판단(A) 실측 후 규칙기반(B) 전환 ② 규칙선택: 결정론 후보 비교 ③ 자가교정: LLM 제안→코드 검증 후 채택",
         "Tree of Thoughts / Self-Correction / Deep Reasoning 등 고급 기법을 사용했다면 논문 레퍼런스와 함께 적용 방법을 명시하세요.":
-            "실측: LLM 3,665ms(130행)·2,524ms(46행) vs 규칙기반 21ms·8.4ms → 174~301배. ToT: Strict 0.786→Balanced 1.0(오탐 1→0건). 참고: Yao 2023·Madaan 2023",
+            "실측: LLM 3,665ms(130행)·2,524ms(46행) vs 규칙기반 21ms·8.4ms → 174~301배. 후보탐색: Strict 0.786→Balanced 1.0(오탐 1→0건). 참고: Yao 2023·Madaan 2023에서 착안",
         "단순 방법 대비 이 설계가 필요했던 기술적 근거를 1~2줄로 서술하세요.":
             "정확도가 같으면 비용·속도·재현성이 유리한 쪽을 택함 — LLM은 호출마다 과금·지연 편차·네트워크 의존이 있지만, 규칙기반은 무료·고속·표준편차 0. "
             "그래서 판단(계획·제안)은 LLM, 확정(검증·병합)은 코드로 나눴고, 이 판단 과정은 요청마다 트레이스(.md/.json)로 자동 기록해 ‘주장’이 아니라 ‘기록’으로 증명합니다.",
     })
-    # 결과 및 성과 (그룹 내 stat 3개) — LLM(A) vs 규칙기반(B) 실측 비교 + ToT 실측 비교
+    # 결과 및 성과 (그룹 내 stat 3개) — LLM(A) vs 규칙기반(B) 실측 비교 + 후보탐색 실측 비교
     nm = name_map(slides[3])
     replace_runs(nm["Text 18"], {"XX%": "174배+"})
     replace_runs(nm["Text 20"], {
@@ -225,7 +225,7 @@ def main() -> None:
     })
     replace_runs(nm["Text 22"], {"XX%": "1.0"})
     replace_runs(nm["Text 24"], {
-        "성과 지표 2": "ToT 규칙 선택 점수",
+        "성과 지표 2": "후보 탐색 규칙 선택 점수",
         "개선 내용 예: 태스크 자동화율 달성": "Strict 0.786→Balanced 1.0, 오탐 1건→0건",
     })
     replace_runs(nm["Text 26"], {"XX배": "0"})

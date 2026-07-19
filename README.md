@@ -34,6 +34,7 @@ Extension/Deadline → Human Approval 또는 Reminder
 - 첨부 양식 재사용 또는 요구사항 기반 Excel 양식 신규 생성
 - 수신자·마감·필수 필드·grounding·도메인 정책 기반 자동발송/승인 분기
 - 제출 Excel의 필수값, 날짜, 숫자, 코드값, 중복 검증
+- Gmail 제출의 안전한 Self-Correction(LLM 교정 제안 → 허용값·날짜 게이트 → 재검증 → 교정본 별도 저장)
 - 검증 실패 사실에 근거한 LLM 반려 메일 작성
 - 수정본 재검증, 정상 제출 병합, 미제출자 리마인드
 - 취합 대상자의 회신 질문을 원래 Gmail 대화와 Job에 연결해 근거 기반 자동답변
@@ -131,20 +132,24 @@ Excel의 날짜·숫자·필수값 검증에서는 규칙과 LLM의 F1이 같고
 |---|---:|---:|---|---|
 | 의미·의도 분류 | 휴리스틱 45.83% | Azure LLM 100% | 24건 exact match, LLM 응답 24/24 | 문맥 해석은 LLM |
 | Excel 오류 검증 | Direct LLM F1 1.0 / 3,933.7ms | 규칙 F1 1.0 / 21.12ms | 130행·오류 26건 | 검증은 결정적 규칙 |
-| 업무 오케스트레이션 | Rule 41.67%, Fixed LLM 83.33% | Agentic 100% | 12건 E2E, unsafe 0건 | 예외·마감은 Supervisor Graph |
+| 업무 오케스트레이션 | Fixed LLM 78.57% | Agentic 100% | 동일 기능 14건 E2E, 구조 실패 복구 0%→100%(n=3) | 예외 복구는 Supervisor Graph |
 
 위 100%는 고정 평가셋 내부 결과이며 일반적인 무오류를 뜻하지 않습니다. 원본 결과는
 `data/classifier_benchmark.json`, `data/llm_vs_rule_benchmark_large.json`,
 `data/roi_benchmark_llm.json`에 보존합니다.
 
-사람의 Before 시간은 임의로 가정하지 않습니다. 다음 도구로 최소 3회 측정한 경우에만
+Rule Sequential은 기능 범위가 작았던 초기 버전 참고치일 뿐 Agentic 인과효과 비교에 사용하지
+않습니다. Fixed와 Agentic은 요청·제출·질문·수정·연장·Deadline·Self-Correction의 동일
+capability를 사용합니다. 벤치마크의 `unsafe_decisions`는 mock·자동발송 OFF에서 잘못된
+허용 결정을 센 값이지 실제 외부 발송 사고 수가 아닙니다.
+
+사람의 Before 시간은 임의로 확정하지 않습니다. 다음 도구로 최소 3회 측정한 경우에만
 `roi`(실측)를 계산하며, 실측 CSV가 없으면 `roi_claim_available=false`로 남습니다.
 
-발표용 참고치로는 작업 분해 기반 **분석적 추정**(스톱워치 실측 아님)을 별도로 제공합니다.
+업무 계획용 참고치로는 작업 분해 기반 **분석적 추정**(스톱워치 실측 아님)을 별도로 제공합니다.
 `docs/roi_manual_estimate.md`에 시나리오별 가정과 산식을 공개했고,
-`scripts/apply_roi_estimate.py`가 이를 `roi_benchmark_llm.json`의 `roi_estimated`
-키(Agent 시간은 실측, 사람 시간만 추정)로 주입합니다. 현재 추정치는 **약 23배 / 약 96% 단축**이며,
-발표에서는 반드시 `~`로 추정임을 표기합니다. 실측 CSV가 준비되면 아래 명령이 추정을 대체합니다.
+`scripts/apply_roi_estimate.py`는 실측 결과와 섞지 않고 `data/roi_estimate.json`에만 저장합니다.
+이 추정치는 발표 KPI로 사용하지 않으며, 실측 CSV가 준비되면 아래 명령으로 실제 ROI를 계산합니다.
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\manual_roi_timer.py --participant P01

@@ -1,0 +1,23 @@
+{
+  "benchmark_source": "data/roi_benchmark_llm.json",
+  "evidence_level": "analytical_estimate_only",
+  "presentation_claim_allowed": false,
+  "manual_time_estimate": {
+    "n": 14,
+    "median_seconds_per_scenario": 195.0,
+    "min_seconds_per_scenario": 30.0,
+    "max_seconds_per_scenario": 720.0,
+    "evidence": "analytical_estimate",
+    "disclaimer": "스톱워치 실측 아님 — 작업 분해 기반 추정",
+    "methodology_doc": "docs/roi_manual_estimate.md"
+  },
+  "roi_estimated": {
+    "manual_normalized_batch_seconds": 2730.0,
+    "agentic_actual_batch_seconds": 111.892,
+    "time_reduction_pct": 95.9,
+    "speedup_x": 24.4,
+    "basis": "동일 14개 시나리오로 정규화",
+    "evidence": "analytical_estimate",
+    "note": "사람 시간만 추정, Agent 시간은 실측(agentic_supervisor_graph.e2e_batch_seconds)"
+  }
+}

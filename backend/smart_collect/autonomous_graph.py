@@ -16,11 +16,13 @@ from langgraph.graph import END, START, StateGraph
 
 from . import job_store
 from .config import DATA_DIR, settings
-from .state import ValidationRule
+from .state import ExtractedRequirements, ValidationRule
 from .tools.email_tools import EmailSendRequest, send_email
-from .tools.excel_tools import load_excel_files, merge_valid_rows, validate_excel_data
+from .tools.excel_tools import LoadedFile, load_excel_files, merge_valid_rows, validate_excel_data
 from .tools.inbox_tools import InboxMessage
 from .tools.mail_classifier import ClassificationResult, classify_message
+from .tools.self_correction import run_self_correction
+from .tools.tot_rules import select_rules_with_candidates
 
 
 class InboxAgentState(TypedDict, total=False):
@@ -364,6 +366,56 @@ JSON만 응답: {{"simple":true|false,"requires_review":true|false,"reason":"근
         return False, f"LLM 판단 실패: {exc}"
 
 
+def _submission_validation_rule(job: dict, loaded: list[LoadedFile]) -> tuple[ValidationRule, str, list[str]]:
+    """발송한 양식의 검증 계약을 우선하고, 레거시 Job만 후보 탐색으로 복구한다.
+
+    실제 제출 파일의 헤더에 맞춰 필수 규칙을 느슨하게 바꾸면 제출자가 컬럼을 삭제해
+    검증을 우회할 수 있다. 따라서 저장된 계약이 있으면 그대로 사용한다. 계약이 없는
+    과거 Job은 다중 후보 탐색 결과를 사용하되 Job의 required_fields를 다시 합쳐 최소
+    필수 계약을 보존한다.
+    """
+    raw_rule = job.get("validation_rule") or {}
+    has_contract = any(raw_rule.get(key) for key in (
+        "required_columns", "date_columns", "number_columns", "code_rules", "duplicate_keys",
+    ))
+    if has_contract:
+        return ValidationRule.model_validate(raw_rule), "job_contract", [
+            "발송 양식에서 파생된 검증 계약을 변경 없이 적용",
+        ]
+
+    req = ExtractedRequirements(
+        request_title=job.get("title"),
+        deadline=job.get("deadline"),
+        required_fields=list(job.get("required_fields") or []),
+    )
+    actual_columns = {str(column) for file in loaded for column in file.df.columns}
+    rule, search_log = select_rules_with_candidates(req, "", actual_columns)
+    rule.required_columns = list(dict.fromkeys([
+        *list(job.get("required_fields") or []), *rule.required_columns,
+    ]))
+    search_log.append("[POLICY] 레거시 Job의 required_fields를 최소 필수 계약으로 재적용")
+    return rule, "candidate_search_legacy_fallback", search_log
+
+
+def _persist_corrected_submission(
+    files: list[LoadedFile], *, job_id: str, message_id: str,
+) -> tuple[list[LoadedFile], list[str]]:
+    """자가교정본을 원본과 분리 저장해 이후 최종 병합에서도 같은 값을 사용한다."""
+    safe_job = re.sub(r"[^0-9A-Za-z_-]", "", job_id) or "JOB"
+    safe_message = re.sub(r"[^0-9A-Za-z_-]", "", message_id) or "MESSAGE"
+    out_dir = DATA_DIR / "corrected_submissions" / safe_job / safe_message
+    out_dir.mkdir(parents=True, exist_ok=True)
+    persisted: list[LoadedFile] = []
+    paths: list[str] = []
+    for index, file in enumerate(files, 1):
+        stem = re.sub(r"[^0-9A-Za-z가-힣_-]", "_", Path(file.name).stem) or f"submission_{index}"
+        out = out_dir / f"{index:02d}_{stem}_corrected.xlsx"
+        file.df.to_excel(out, index=False, engine="openpyxl")
+        paths.append(str(out))
+        persisted.append(LoadedFile(path=str(out), name=out.name, df=file.df.copy()))
+    return persisted, paths
+
+
 def _submission_worker(state: InboxAgentState) -> dict:
     msg, cls = state["message"], state["classification"]
     job = job_store.find_job_for_message(f"{msg.subject}\n{msg.body}", msg.thread_id, _db(state))
@@ -375,13 +427,37 @@ def _submission_worker(state: InboxAgentState) -> dict:
         _log(state, "Validation Agent", "load_submission", "failure", {"reason": "attachment_unavailable"})
         return {"job_id": job["job_id"], "outcome": "failure", "observation": {"reason": "attachment_unavailable"}, "terminal": False}
     try:
-        rule = ValidationRule.model_validate(job.get("validation_rule") or {})
         loaded = load_excel_files(paths)
-        result = validate_excel_data(loaded, rule)
+        rule, rule_source, candidate_log = _submission_validation_rule(job, loaded)
+        before_result = validate_excel_data(loaded, rule)
+        correction, corrected_files, correction_log = run_self_correction(
+            loaded, before_result, rule, use_llm=state.get("prefer_llm", True),
+        )
+        effective_files = corrected_files if correction.accepted else loaded
+        result = validate_excel_data(effective_files, rule) if correction.accepted else before_result
         errors = [e.model_dump() for e in result.error_details]
     except Exception as exc:
         _log(state, "Validation Agent", "validate_submission", "failure", {"error": str(exc)})
         return {"job_id": job["job_id"], "outcome": "failure", "observation": {"error": str(exc)}, "terminal": False}
+
+    quality = {
+        "rule_source": rule_source,
+        "candidate_search_log": candidate_log,
+        "self_correction": correction.model_dump(),
+        "self_correction_log": correction_log,
+        "errors_before": before_result.error_rows,
+        "errors_after": result.error_rows,
+    }
+    _log(state, "Validation Contract Agent", "select_validation_contract", "success", {
+        "source": rule_source, "required_columns": rule.required_columns,
+    })
+    _log(state, "Self-Correction Agent", "correct_and_revalidate", "success", {
+        "fixable": correction.fixable_errors,
+        "applied": correction.applied_corrections,
+        "accepted": correction.accepted,
+        "errors_before": before_result.error_rows,
+        "errors_after": result.error_rows,
+    })
 
     email = _sender_email(msg)
     if errors:
@@ -404,7 +480,10 @@ def _submission_worker(state: InboxAgentState) -> dict:
         }
         record = _base_record(
             state, "draft_ready", draft=draft, recipients=recipients,
-            artifacts={"job_id": job["job_id"], "validation_errors": errors},
+            artifacts={
+                "job_id": job["job_id"], "validation_errors": errors,
+                "quality_pipeline": quality,
+            },
         )
         record["decision"] = decision
         if auto:
@@ -415,15 +494,25 @@ def _submission_worker(state: InboxAgentState) -> dict:
         })
         return {"record": record, "job_id": job["job_id"], "outcome": "success", "terminal": True}
 
+    accepted_paths = paths
+    if correction.accepted and correction.applied_corrections:
+        effective_files, accepted_paths = _persist_corrected_submission(
+            effective_files, job_id=job["job_id"], message_id=msg.id,
+        )
+        quality["corrected_submission_paths"] = accepted_paths
+
     job_store.add_submission({
         "job_id": job["job_id"], "message_id": msg.id, "sender": email,
-        "attachment_paths": paths, "status": "accepted", "errors": [],
+        "attachment_paths": accepted_paths, "status": "accepted", "errors": [],
         "submitted_at": msg.received_at,
     }, _db(state))
     accepted = [s for s in job_store.list_submissions(job["job_id"], _db(state)) if s["status"] == "accepted"]
     recipient_count = len(job.get("recipients") or [])
     complete = recipient_count > 0 and len({s["sender"] for s in accepted}) >= recipient_count
-    artifacts: dict[str, Any] = {"job_id": job["job_id"], "validation": result.model_dump()}
+    artifacts: dict[str, Any] = {
+        "job_id": job["job_id"], "validation": result.model_dump(),
+        "quality_pipeline": quality,
+    }
     if complete:
         all_paths = [p for s in accepted for p in s["attachment_paths"]]
         loaded_all = load_excel_files(all_paths)

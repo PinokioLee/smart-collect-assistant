@@ -3,9 +3,9 @@
 측정 항목
   1) 검출 정확도   : 라벨링된 데이터셋에서 오류 검출 Precision/Recall/F1
   2) 재현성        : 동일 입력 N회 반복 시 오류 수 표준편차(결정론 → 0)
-  3) 처리 속도     : 자동 처리 시간(실측) vs 현행 수동(설계서 기준) 단축률·배수
+  3) 처리 속도     : 자동 처리 시간·처리량 실측 (사람 대비 ROI는 별도 실측 프로토콜)
   4) 자동 교정율   : Self-Correction 으로 자동 복구된 비율
-  5) ToT 변별력    : 스키마 드리프트 시 과잉 필수규칙의 오탐을 회피한 건수
+  5) 후보 탐색력   : 스키마 드리프트 시 과잉 필수규칙의 오탐을 회피한 건수
 
 실행: python backend/benchmark.py   (결과는 data/benchmark_metrics.json 에도 저장)
 """
@@ -29,12 +29,6 @@ from .tools.tot_rules import evaluate_candidate, generate_candidates
 COLUMNS = ["부서명", "담당자", "요청시스템", "개선요청내용", "긴급도", "요청사유", "요청일자"]
 TEAMS = ["영업1팀", "영업2팀", "생산1팀", "생산2팀", "품질팀", "물류팀"]
 SYSTEMS = ["ERP", "MES", "WMS", "CRM", "QMS", "LIMS", "PLM", "SCM"]
-
-# 현행 수동 검토 추정(투명한 공식): 파일 1개 열람 60초 + 행 1개당 4종 규칙
-# 육안 점검·오류기록 15초. 설계서의 '최종 취합 90분/건'과도 정합적인 보수적 추정.
-MANUAL_SECONDS_PER_FILE = 60
-MANUAL_SECONDS_PER_ROW = 15
-
 
 def _rule() -> tuple:
     rules = build_validation_rules(
@@ -155,7 +149,7 @@ def measure_reproducibility(paths: list[str], rules, runs: int = 10) -> dict:
 
 
 def measure_speed(paths: list[str], rules, runs: int = 20) -> dict:
-    """엔드투엔드(로드+검증+병합) 처리시간 실측 + 수동 대비 단축률."""
+    """엔드투엔드(로드+검증+병합) 처리시간과 처리량만 실측한다."""
     times: list[float] = []
     for _ in range(runs):
         t0 = time.perf_counter()
@@ -167,15 +161,13 @@ def measure_speed(paths: list[str], rules, runs: int = 20) -> dict:
     auto = statistics.median(times)
     loaded = ex.load_excel_files(paths)
     total_rows = sum(len(f.df) for f in loaded)
-    manual = len(paths) * MANUAL_SECONDS_PER_FILE + total_rows * MANUAL_SECONDS_PER_ROW
     return {
         "total_rows": total_rows,
         "auto_seconds": round(auto, 4),
         "throughput_rows_per_sec": round(total_rows / auto, 0),
-        "manual_estimate_seconds": manual,
-        "manual_estimate_min": round(manual / 60, 1),
-        "speedup_x": round(manual / auto, 0),
-        "reduction_pct": round((1 - auto / manual) * 100, 2),
+        "runs": runs,
+        "evidence": "measured_agent_execution_only",
+        "manual_comparison_available": False,
     }
 
 
@@ -195,8 +187,8 @@ def measure_self_correction(paths: list[str], rules) -> dict:
     }
 
 
-def measure_tot_discrimination() -> dict:
-    """스키마 드리프트 시 ToT 가 과잉 필수규칙(Strict)의 오탐을 회피하는지."""
+def measure_candidate_search_discrimination() -> dict:
+    """다중 후보 탐색이 과잉 필수규칙(Strict)의 오탐을 회피하는지 측정한다."""
     # 한 파일에 '요청사유' 컬럼이 빠진 상황을 가정 (실제 양식 변형)
     fields = COLUMNS
     req = ExtractedRequirements(required_fields=fields, cautions=[
@@ -233,7 +225,7 @@ def run_benchmark() -> dict:
         "reproducibility": measure_reproducibility(paths, rules),
         "speed": measure_speed(paths, rules),
         "self_correction": measure_self_correction(paths, rules),
-        "tot_discrimination": measure_tot_discrimination(),
+        "candidate_search_discrimination": measure_candidate_search_discrimination(),
     }
     out = DATA_DIR / "benchmark_metrics.json"
     out.write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -245,7 +237,7 @@ def _print_table(m: dict) -> None:
     rep = m["reproducibility"]
     sp = m["speed"]
     sc = m["self_correction"]
-    tot = m["tot_discrimination"]
+    candidate = m["candidate_search_discrimination"]
     print("\n" + "=" * 60)
     print("  Smart Collect - 실측 벤치마크 (KPI)")
     print("=" * 60)
@@ -256,12 +248,12 @@ def _print_table(m: dict) -> None:
     print(f"  [2] 재현성       {rep['runs']}회 반복 오류수 표준편차 = {rep['error_count_stdev']:.4f}  "
           f"(처리 {rep['time_mean_ms']:.2f}ms)")
     print(f"  [3] 처리 속도    {sp['total_rows']}행 자동 {sp['auto_seconds']}초 "
-          f"({sp['throughput_rows_per_sec']:,.0f}행/초)  vs 수동추정 {sp['manual_estimate_min']}분  "
-          f"-> {sp['speedup_x']:,.0f}배 ({sp['reduction_pct']:.1f}% down)")
+          f"({sp['throughput_rows_per_sec']:,.0f}행/초, {sp['runs']}회 중앙값)  "
+          "사람 대비 ROI는 별도 실측 전 미제공")
     print(f"  [4] 자동 교정    교정율 {sc['auto_fix_rate_pct']:.0f}%  "
           f"오류행 복구 {sc['error_rows_recovered']}건 (재작업 {sc['rework_reduction_pct']:.0f}% down)")
-    print(f"  [5] ToT 변별     {tot['selected']} 선택 -> 과잉규칙 오탐 "
-          f"{tot['false_positives_avoided']}건 회피 {tot['strict_false_positive_cols']}")
+    print(f"  [5] 후보 탐색    {candidate['selected']} 선택 -> 과잉규칙 오탐 "
+          f"{candidate['false_positives_avoided']}건 회피 {candidate['strict_false_positive_cols']}")
     print("=" * 60)
 
 

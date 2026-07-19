@@ -145,7 +145,7 @@ class AgentState(BaseModel):
     extracted_requirements: Optional[ExtractedRequirements] = None
     validation_rules: Optional[ValidationRule] = None
     # True 이면 validation_rules 가 '생성한 양식(TemplateSpec)'에서 확정된 계약이므로
-    # Supervisor 는 ToT 로 규칙을 재도출하지 않고 그대로 사용한다(라운드트립).
+    # Supervisor 는 후보 탐색으로 규칙을 재도출하지 않고 그대로 사용한다(라운드트립).
     template_locked: bool = False
     template_id: Optional[str] = None
     # Supervisor(LLM) 의 실행 계획·리스크 판단 (에이전틱 계획 단계)
@@ -163,7 +163,7 @@ class AgentState(BaseModel):
     merged_rows: int = 0
     error_report: Optional[str] = None
 
-    # 고수준 추론 로그 (ToT / Self-Correction / Planning) — 시연 영상·보고서용
+    # 고수준 실행 로그 (후보 탐색 / Self-Correction / Planning) — 시연 영상·보고서용
     reasoning_log: list[str] = Field(default_factory=list)
     # 구조화 추론 스텝 — 화면 타임라인 + 트레이스 증거 파일용
     reasoning_steps: list[ReasoningStep] = Field(default_factory=list)
