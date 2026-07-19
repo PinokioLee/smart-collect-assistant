@@ -207,6 +207,7 @@ export interface SendEmailResponse {
   subject: string;
   message_id: string | null;
   detail: string | null;
+  thread_id?: string | null;
 }
 
 export async function sendEmail(input: SendEmailInput): Promise<SendEmailResponse> {
@@ -317,6 +318,16 @@ export interface InboxItem {
     filename?: string;
     download?: string | null;
     job_id?: string;
+    answer_grounding?: {
+      answerable?: boolean;
+      used_fact_keys?: string[];
+      reason?: string;
+    };
+    reply_context?: {
+      thread_id?: string;
+      in_reply_to?: string;
+      references?: string;
+    };
     agent_trace?: { seq: number; agent: string; action: string; outcome: string; detail?: Record<string, any> }[];
   };
   sent: boolean;

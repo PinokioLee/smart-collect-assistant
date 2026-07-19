@@ -28,6 +28,8 @@ _MSG = {
             {"name": "To", "value": "me@company.com"},
             {"name": "Cc", "value": "영업 담당 <sales@company.com>, qa@company.com"},
             {"name": "Subject", "value": "[요청] 7월 시스템 개선 요청사항 취합"},
+            {"name": "Message-ID", "value": "<gmail-message-1@example.com>"},
+            {"name": "References", "value": "<older@example.com>"},
             {"name": "Date", "value": "Mon, 14 Jul 2025 09:00:00 +0900"},
         ],
         "parts": [
@@ -120,6 +122,9 @@ def test_list_new_reads_and_parses_real_shape(tmp_path):
     assert "html 버전" not in m.body                 # text/plain 만 취함
     assert m.attachments == ["개선요청_양식.xlsx"]   # 중첩 파트에서 첨부 추출
     assert "INBOX" in m.labels
+    assert m.thread_id == _MSG["threadId"]
+    assert m.rfc_message_id == "<gmail-message-1@example.com>"
+    assert m.references == "<older@example.com>"
     assert m.received_at.startswith("2025-07-1")     # internalDate → 날짜 변환
 
 

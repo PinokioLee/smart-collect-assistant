@@ -36,6 +36,8 @@ Extension/Deadline → Human Approval 또는 Reminder
 - 제출 Excel의 필수값, 날짜, 숫자, 코드값, 중복 검증
 - 검증 실패 사실에 근거한 LLM 반려 메일 작성
 - 수정본 재검증, 정상 제출 병합, 미제출자 리마인드
+- 취합 대상자의 회신 질문을 원래 Gmail 대화와 Job에 연결해 근거 기반 자동답변
+- 기한·양식 변경, 예외 승인, 비대상자 질문은 자동답변하지 않고 승인 큐로 전환
 - Worker 실패 observation → 일시 오류 1회 재시도 → 구조적 실패/재실패 Human Review
 - Agent Job과 실행 로그를 보여주는 React UI
 

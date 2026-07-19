@@ -76,6 +76,8 @@ class InboxMessage:
     attachment_paths: list[str] = field(default_factory=list)
     labels: list[str] = field(default_factory=list)
     thread_id: str = ""
+    rfc_message_id: str = ""
+    references: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -89,6 +91,9 @@ class InboxMessage:
             "attachments": self.attachments,
             "attachment_paths": self.attachment_paths,
             "labels": self.labels,
+            "thread_id": self.thread_id,
+            "rfc_message_id": self.rfc_message_id,
+            "references": self.references,
         }
 
 
@@ -327,6 +332,8 @@ class GmailReadAdapter:
             cc=addresses("cc"),
             attachments=attachments,
             labels=msg.get("labelIds", []),
+            rfc_message_id=headers.get("message-id", ""),
+            references=headers.get("references", ""),
         )
 
     @staticmethod

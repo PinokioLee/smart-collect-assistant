@@ -32,6 +32,7 @@ def init_job_tables(db_path: str | Path | None = None) -> None:
             job_id TEXT PRIMARY KEY,
             source_message_id TEXT,
             source_thread_id TEXT,
+            outbound_thread_id TEXT,
             title TEXT,
             deadline TEXT,
             recipients TEXT,
@@ -69,6 +70,10 @@ def init_job_tables(db_path: str | Path | None = None) -> None:
         CREATE INDEX IF NOT EXISTS idx_actions_event ON agent_actions(event_id, seq);
         CREATE INDEX IF NOT EXISTS idx_submissions_job ON job_submissions(job_id);
         """)
+        # 기존 로컬 DB도 데이터 삭제 없이 회신 thread 추적 필드를 추가한다.
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(collection_jobs)")}
+        if "outbound_thread_id" not in columns:
+            conn.execute("ALTER TABLE collection_jobs ADD COLUMN outbound_thread_id TEXT")
         conn.commit()
 
 
@@ -100,6 +105,7 @@ def create_job(job: dict, db_path: str | Path | None = None) -> dict:
         "job_id": job["job_id"],
         "source_message_id": job.get("source_message_id"),
         "source_thread_id": job.get("source_thread_id"),
+        "outbound_thread_id": job.get("outbound_thread_id"),
         "title": job.get("title"),
         "deadline": job.get("deadline"),
         "recipients": json.dumps(job.get("recipients", []), ensure_ascii=False),
@@ -144,6 +150,7 @@ def list_jobs(status: str | None = None, db_path: str | Path | None = None) -> l
 
 def update_job(
     job_id: str, *, status: str | None = None, result: dict | None = None,
+    outbound_thread_id: str | None = None,
     db_path: str | Path | None = None,
 ) -> None:
     fields = ["updated_at=?"]
@@ -154,6 +161,9 @@ def update_job(
     if result is not None:
         fields.append("result=?")
         values.append(json.dumps(result, ensure_ascii=False))
+    if outbound_thread_id:
+        fields.append("outbound_thread_id=?")
+        values.append(outbound_thread_id)
     values.append(job_id)
     with _connect(db_path) as conn:
         conn.execute(f"UPDATE collection_jobs SET {', '.join(fields)} WHERE job_id=?", values)
@@ -173,7 +183,10 @@ def find_job_for_message(
             return found
     jobs = [j for j in list_jobs(db_path=db_path) if j.get("status") in {"collecting", "partial"}]
     if thread_id:
-        matched = [j for j in jobs if j.get("source_thread_id") == thread_id]
+        matched = [
+            j for j in jobs
+            if thread_id in {j.get("source_thread_id"), j.get("outbound_thread_id")}
+        ]
         if len(matched) == 1:
             return matched[0]
     return jobs[0] if len(jobs) == 1 else None

@@ -298,6 +298,7 @@ def inbox_send(message_id: str, payload: dict | None = None) -> dict:
         detail = "추가 발송할 새 수신자를 입력해 주세요." if rec["status"] == "sent" else "수신자가 없습니다."
         raise HTTPException(status_code=400, detail=detail)
 
+    reply = rec.get("artifacts", {}).get("reply_context", {})
     result = send_email(
         EmailSendRequest(
             to=to,
@@ -307,6 +308,9 @@ def inbox_send(message_id: str, payload: dict | None = None) -> dict:
                 p for p in rec.get("artifacts", {}).get("attachment_paths", [])
                 if Path(p).exists()
             ],
+            thread_id=str(reply.get("thread_id") or ""),
+            in_reply_to=str(reply.get("in_reply_to") or ""),
+            references=str(reply.get("references") or ""),
         )
     )
     if additional_only:
@@ -326,7 +330,10 @@ def inbox_send(message_id: str, payload: dict | None = None) -> dict:
         store.mark_sent(message_id, result.get("message_id"))
         job_id = rec.get("artifacts", {}).get("job_id")
         if job_id and rec.get("intent") == "request":
-            job_store.update_job(job_id, status="collecting")
+            job_store.update_job(
+                job_id, status="collecting",
+                outbound_thread_id=str(result.get("thread_id") or "") or None,
+            )
     return {
         "message_id": message_id,
         "send_result": result,

@@ -184,11 +184,15 @@ def _send_record(record: dict) -> dict:
         p for p in record.get("artifacts", {}).get("attachment_paths", [])
         if Path(p).exists()
     ]
+    reply = record.get("artifacts", {}).get("reply_context", {})
     result = send_email(EmailSendRequest(
         to=to,
         subject=record.get("draft_subject") or "[취합 요청]",
         body=record.get("draft_body") or "",
         attachment_paths=paths,
+        thread_id=str(reply.get("thread_id") or ""),
+        in_reply_to=str(reply.get("in_reply_to") or ""),
+        references=str(reply.get("references") or ""),
     ))
     record["status"] = "sent"
     record["sent"] = True

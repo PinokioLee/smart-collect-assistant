@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from smart_collect import autonomous_graph, inbox_pipeline, job_store
+from smart_collect import autonomous_graph, inbox_pipeline, job_store, llm
 from smart_collect.deadline_agent import run_deadline_agent
 from smart_collect.state import ColumnSpec, ExtractedRequirements, TemplateSpec
 from smart_collect.tools import advanced_rag
@@ -37,7 +37,8 @@ def _job(db, tmp_path, *, job_id="SC-JOB", recipients=None, deadline="2026-07-20
     template = tmp_path / f"{job_id}_template.xlsx"
     _xlsx(template, [])
     return job_store.create_job({
-        "job_id": job_id, "title": "월간 실적 취합", "deadline": deadline,
+        "job_id": job_id, "source_thread_id": "THREAD-SC-JOB",
+        "title": "월간 실적 취합", "deadline": deadline,
         "recipients": recipients or [{"name": "사용자", "dept": "영업", "email": "user@company.com"}],
         "required_fields": ["부서명", "담당자", "금액"],
         "validation_rule": {
@@ -265,3 +266,107 @@ def test_14_policy_gate_blocks_incompatible_llm_route(tmp_path, monkeypatch):
     decision = next(a for a in actions if a["action"] == "select_next_action")
     assert decision["detail"]["route"] == "human_review"
     assert "route_intent_mismatch" in decision["detail"]["reason"]
+
+
+def test_15_grounded_participant_question_is_auto_replied_in_same_thread(tmp_path, monkeypatch):
+    db = tmp_path / "db.sqlite"
+    _job(db, tmp_path)
+    monkeypatch.setattr(
+        autonomous_graph, "classify_message",
+        lambda *a, **k: _cls("collection", "question", confidence=0.98),
+    )
+    monkeypatch.setattr(autonomous_graph, "_llm_route", lambda *a, **k: ("qa_worker", "질문 답변"))
+    monkeypatch.setattr(autonomous_graph, "settings", type("Settings", (), {
+        "azure_ready": True, "auto_send_enabled": True,
+        "auto_send_allowed_domains": ("company.com",), "auto_send_min_confidence": 0.90,
+    })())
+    monkeypatch.setattr(llm, "chat_json", lambda *a, **k: {
+        "body": "제출 마감은 2026년 7월 20일 17시입니다.",
+        "answerable": True, "requires_review": False,
+        "used_fact_keys": ["마감"], "reason": "Job 마감 정보로 답변",
+    })
+    sent = {}
+    def fake_send(request):
+        sent["request"] = request
+        return {"status": "mock_sent", "message_id": "QA-AUTO-1", "thread_id": request.thread_id}
+    monkeypatch.setattr(inbox_pipeline, "send_email", fake_send)
+    record = autonomous_graph.run_mail_event(
+        InboxMessage(
+            id="QA-AUTO", thread_id="THREAD-SC-JOB",
+            rfc_message_id="<question-1@company.com>", references="<request-1@company.com>",
+            sender="사용자 <user@company.com>", subject="Re: 월간 실적 취합",
+            body="제출 마감은 언제인가요?",
+        ),
+        db_path=db, prefer_llm=True, auto_send_enabled=True,
+    )
+    assert record["status"] == "sent"
+    assert record["decision"]["action"] == "auto_send"
+    assert sent["request"].thread_id == "THREAD-SC-JOB"
+    assert sent["request"].in_reply_to == "<question-1@company.com>"
+    assert record["artifacts"]["answer_grounding"]["used_fact_keys"] == ["마감"]
+
+
+def test_16_question_from_non_participant_requires_review(tmp_path, monkeypatch):
+    db = tmp_path / "db.sqlite"
+    _job(db, tmp_path)
+    monkeypatch.setattr(autonomous_graph, "classify_message", lambda *a, **k: _cls("collection", "question"))
+    monkeypatch.setattr(autonomous_graph, "_llm_route", lambda *a, **k: ("qa_worker", "질문 답변"))
+    monkeypatch.setattr(autonomous_graph, "settings", type("Settings", (), {
+        "azure_ready": True, "auto_send_enabled": True,
+        "auto_send_allowed_domains": ("company.com",), "auto_send_min_confidence": 0.90,
+    })())
+    monkeypatch.setattr(llm, "chat_json", lambda *a, **k: {
+        "body": "제출 마감은 17시입니다.", "answerable": True,
+        "requires_review": False, "used_fact_keys": ["마감"], "reason": "마감 근거",
+    })
+    record = autonomous_graph.run_mail_event(
+        _message("QA-OUT", "[SC-JOB] 작성 문의", "마감은 언제인가요?", sender="other@company.com"),
+        db_path=db, prefer_llm=True, auto_send_enabled=True,
+    )
+    assert record["status"] == "draft_ready"
+    assert record["decision"]["action"] == "review"
+    assert "sender_not_job_participant" in record["decision"]["risk_flags"]
+
+
+def test_17_policy_change_question_never_auto_replies(tmp_path, monkeypatch):
+    db = tmp_path / "db.sqlite"
+    _job(db, tmp_path)
+    monkeypatch.setattr(autonomous_graph, "classify_message", lambda *a, **k: _cls("collection", "question"))
+    monkeypatch.setattr(autonomous_graph, "_llm_route", lambda *a, **k: ("qa_worker", "질문 답변"))
+    monkeypatch.setattr(autonomous_graph, "settings", type("Settings", (), {
+        "azure_ready": True, "auto_send_enabled": True,
+        "auto_send_allowed_domains": ("company.com",), "auto_send_min_confidence": 0.90,
+    })())
+    monkeypatch.setattr(llm, "chat_json", lambda *a, **k: {
+        "body": "변경 가능합니다.", "answerable": True,
+        "requires_review": False, "used_fact_keys": ["양식"], "reason": "양식 근거",
+    })
+    record = autonomous_graph.run_mail_event(
+        _message("QA-POLICY", "[SC-JOB] 문의", "양식을 바꿔 제출해도 되나요?"),
+        db_path=db, prefer_llm=True, auto_send_enabled=True,
+    )
+    assert record["decision"]["action"] == "review"
+    assert "policy_change_or_exception_question" in record["decision"]["risk_flags"]
+
+
+def test_18_thread_context_routes_short_offline_reply_to_qa(tmp_path):
+    db = tmp_path / "db.sqlite"
+    _job(db, tmp_path)
+    record = autonomous_graph.run_mail_event(
+        InboxMessage(
+            id="QA-THREAD", thread_id="THREAD-SC-JOB", sender="user@company.com",
+            subject="Re: 월간 실적", body="작성 기준을 어떻게 적용하나요?",
+        ),
+        db_path=db, prefer_llm=False, auto_send_enabled=False,
+    )
+    assert record["intent"] == "question"
+    assert record["status"] == "draft_ready"
+    assert record["artifacts"]["job_id"] == "SC-JOB"
+
+
+def test_19_outbound_gmail_thread_can_find_collection_job(tmp_path):
+    db = tmp_path / "db.sqlite"
+    _job(db, tmp_path)
+    job_store.update_job("SC-JOB", outbound_thread_id="GMAIL-OUTBOUND-THREAD", db_path=db)
+    found = job_store.find_job_for_message("제목이 변경된 질문", "GMAIL-OUTBOUND-THREAD", db)
+    assert found and found["job_id"] == "SC-JOB"

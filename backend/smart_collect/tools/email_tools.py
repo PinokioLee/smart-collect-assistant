@@ -26,6 +26,10 @@ class EmailSendRequest:
     body: str
     cc: list[str] = field(default_factory=list)
     attachment_paths: list[str] = field(default_factory=list)
+    # Gmail 회신을 원본 대화에 유지하기 위한 메타데이터. 새 메일이면 비워 둔다.
+    thread_id: str = ""
+    in_reply_to: str = ""
+    references: str = ""
 
 
 @dataclass
@@ -36,6 +40,7 @@ class EmailSendResult:
     subject: str
     message_id: str | None = None
     detail: str | None = None
+    thread_id: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -45,6 +50,7 @@ class EmailSendResult:
             "subject": self.subject,
             "message_id": self.message_id,
             "detail": self.detail,
+            "thread_id": self.thread_id,
         }
 
 
@@ -64,6 +70,7 @@ class MockEmailAdapter:
             subject=request.subject,
             message_id="MOCK-" + str(abs(hash((tuple(request.to), request.subject)))),
             detail="Mock mode: 실제 Gmail 발송 없이 발송 이력만 생성했습니다.",
+            thread_id=request.thread_id or None,
         )
 
 
@@ -85,10 +92,13 @@ class GmailApiEmailAdapter:
         service = self._service()
         message = self._build_message(request)
         raw = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
+        payload = {"raw": raw}
+        if request.thread_id:
+            payload["threadId"] = request.thread_id
         sent = (
             service.users()
             .messages()
-            .send(userId="me", body={"raw": raw})
+            .send(userId="me", body=payload)
             .execute()
         )
         return EmailSendResult(
@@ -98,6 +108,7 @@ class GmailApiEmailAdapter:
             subject=request.subject,
             message_id=sent.get("id"),
             detail="Gmail API로 실제 메일을 발송했습니다.",
+            thread_id=sent.get("threadId") or request.thread_id or None,
         )
 
     def _service(self):
@@ -144,6 +155,13 @@ class GmailApiEmailAdapter:
         if self.sender:
             msg["From"] = self.sender
         msg["Subject"] = request.subject
+        if request.in_reply_to:
+            msg["In-Reply-To"] = request.in_reply_to
+        reference_values = " ".join(
+            value for value in (request.references.strip(), request.in_reply_to.strip()) if value
+        )
+        if reference_values:
+            msg["References"] = reference_values
         msg.set_content(request.body)
 
         for raw_path in request.attachment_paths:

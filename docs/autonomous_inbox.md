@@ -14,7 +14,7 @@ APScheduler / 지금 실행
   → 선택된 Worker
       Request: 양식 결정 → 요구분석/RAG → 요청메일
       Submission/Correction: 검증 → 반려 또는 병합
-      Question: Job 사실 기반 답변
+      Question: Job 사실 기반 답변 → 같은 Gmail thread로 회신
       Extension: Human Approval
   → 발송 Policy Gate → Gmail Send Tool 또는 검토 큐
   → Worker 결과 Observation
@@ -26,7 +26,7 @@ APScheduler / 지금 실행
 
 LLM의 `simple` 판단만으로 발송하지 않는다. 다음 조건을 모두 만족해야 한다.
 
-- 취합업무메일 중 `request` 의도
+- 자동 행동을 지원하는 취합 `request`, 검증 반려, 단순 `question`, 마감 리마인드
 - 분류 신뢰도가 `AUTO_SEND_MIN_CONFIDENCE` 이상
 - 마감일과 작성 항목이 명확하고 `missing_info`가 없음
 - 메일에 대상 부서가 명시되면 조직도, 없으면 원본 From+Cc를 수신자로 사용
@@ -36,6 +36,12 @@ LLM의 `simple` 판단만으로 발송하지 않는다. 다음 조건을 모두 
 - 프롬프트 인젝션 등 위험 플래그 없음
 - LLM Supervisor가 단순 업무이며 사람 확인이 불필요하다고 판단
 - `AUTO_SEND_ENABLED=true`
+
+질문 자동답변은 여기에 더해 질문자가 해당 Job 수신자여야 하고, 원래 Gmail thread
+또는 `[SC-...]` 작업번호로 대화를 검증해야 한다. LLM이 사용한 Job 사실 키를 함께
+기록하며, 기한 연장·양식 변경·예외 승인·대리 제출처럼 정책을 바꾸는 질문은 답변
+초안만 만들고 사람 승인으로 보낸다. 실제 Gmail 발송 시 `threadId`, `In-Reply-To`,
+`References`를 전달해 질문 메일과 같은 대화에 답장한다.
 
 하나라도 실패하면 메일은 발송되지 않고 승인 큐로 이동한다. 스팸·위험메일은
 삭제하지 않고 격리한다.
@@ -70,13 +76,14 @@ SQLite의 각 메일 레코드에 다음을 보존한다.
 - Template/Communication Agent: 신규 취합 요청, 양식 선택·생성, Job ID 발급
 - Validation Agent: 제출/수정본 Excel을 Job 검증 계약으로 검사
 - Communication Agent: 검증 오류를 행·컬럼 단위 반려메일로 작성
-- Q&A RAG Agent: Job의 마감·작성항목·양식 사실에 근거한 답변
+- Q&A RAG/Communication Agent: Job의 마감·작성항목·검증규칙 사실에 근거한 동일 thread 답변
 - Deadline Agent: 연장 요청은 사람 승인, 마감 임박 미제출자는 리마인드
 - Merge Agent: 전원 정상 제출 시 유효 행을 자동 병합
 - Security Agent: 스팸·피싱·프롬프트 인젝션 격리
 
 Collection Job 제목에는 `[SC-...]` 작업번호가 들어가므로 제출·질문·수정본을
-원래 취합 건과 연결한다. 작업번호가 없고 활성 Job도 하나로 확정되지 않으면
+원래 취합 건과 연결한다. 제목이 변경돼도 Gmail thread가 저장된 Job과 일치하면
+질문 문맥을 복원한다. 작업번호·thread가 없고 활성 Job도 하나로 확정되지 않으면
 임의 연결하지 않고 Supervisor가 사람 확인으로 재계획한다.
 
 ## 정량 비교

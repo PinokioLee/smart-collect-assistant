@@ -850,13 +850,19 @@ function QueueCard({ item, sending, onApprove }: { item: InboxItem; sending: boo
   const status = item.status;
   const confidence = Math.round(item.confidence * 100);
   const action = item.decision?.action;
+  const isQuestion = item.intent === "question";
   const extras = extraRecipients.split(",").map((value) => value.trim()).filter(Boolean);
   const canSend = status === "draft_ready" || status === "sent";
   const recipientSource = item.artifacts?.recipient_source === "original_sender_cc"
     ? "원본 작성자·참조자"
     : item.artifacts?.recipient_source === "directory_explicit_target"
       ? "메일에 명시된 대상"
+      : item.artifacts?.recipient_source === "question_sender"
+        ? "질문 보낸 사람"
       : "확인 필요";
+  const draftKind = isQuestion
+    ? "취합 문의 답변"
+    : item.artifacts?.strategy === "generate" ? "새 양식 생성" : "첨부 양식 사용";
   return (
     <article className={`queue-card status-${status}`}>
       <div className="queue-card-top">
@@ -874,11 +880,13 @@ function QueueCard({ item, sending, onApprove }: { item: InboxItem; sending: boo
         <div className="draft-summary">
           <div>
             <span>에이전트 결정</span>
-            <strong>{item.artifacts?.strategy === "generate" ? "새 양식 생성" : "첨부 양식 사용"} · {action === "auto_send" ? "자동 발송" : "승인 후 발송"}</strong>
+            <strong>{draftKind} · {action === "auto_send" ? "자동 발송" : "승인 후 발송"}</strong>
           </div>
           <div>
-            <span>작성 근거</span>
-            <strong>{Math.round((item.grounding?.score ?? 0) * 100)}% 검증</strong>
+            <span>{isQuestion ? "답변 근거" : "작성 근거"}</span>
+            <strong>{isQuestion
+              ? `${item.artifacts?.answer_grounding?.used_fact_keys?.length ?? 0}개 Job 사실`
+              : `${Math.round((item.grounding?.score ?? 0) * 100)}% 검증`}</strong>
           </div>
         </div>
       )}
@@ -888,6 +896,7 @@ function QueueCard({ item, sending, onApprove }: { item: InboxItem; sending: boo
       )}
       {status === "quarantined" && <p className="reason-box danger">스팸, 위험 명령 또는 프롬프트 인젝션 가능성을 탐지해 실행을 차단했습니다.</p>}
       {status === "submission_accepted" && <p className="reason-box success">제출 파일의 구조와 값을 검증했습니다. 정상 데이터로 반영할 수 있습니다.</p>}
+      {status === "sent" && isQuestion && <p className="reason-box success">저장된 취합 Job 근거로 질문자에게 자동 답변했습니다.</p>}
 
       {canSend && (
         <div className="recipient-box">
@@ -922,11 +931,13 @@ function QueueCard({ item, sending, onApprove }: { item: InboxItem; sending: boo
               </button>
             </div>
           </div>
-          <div className="attachment-line">
-            <span>{item.artifacts?.strategy === "generate" ? "새로 생성한 양식" : "받은 첨부 양식"}</span>
-            <strong>{item.artifacts?.filename || "첨부 없음"}</strong>
-            {item.artifacts?.download && <a href={item.artifacts.download}>양식 확인</a>}
-          </div>
+          {!isQuestion && (
+            <div className="attachment-line">
+              <span>{item.artifacts?.strategy === "generate" ? "새로 생성한 양식" : "받은 첨부 양식"}</span>
+              <strong>{item.artifacts?.filename || "첨부 없음"}</strong>
+              {item.artifacts?.download && <a href={item.artifacts.download}>양식 확인</a>}
+            </div>
+          )}
         </div>
       )}
 

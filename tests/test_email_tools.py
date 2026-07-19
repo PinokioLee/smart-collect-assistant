@@ -7,7 +7,9 @@ API 입력 검증을 확인한다.
 from fastapi.testclient import TestClient
 
 from api import app
-from smart_collect.tools.email_tools import EmailSendRequest, MockEmailAdapter
+from smart_collect.tools.email_tools import (
+    EmailSendRequest, GmailApiEmailAdapter, MockEmailAdapter,
+)
 
 
 def test_mock_email_adapter_records_send():
@@ -50,3 +52,39 @@ def test_send_email_api_mock_success():
     assert data["status"] == "mock_sent"
     assert data["mode"] == "mock"
     assert data["recipients"] == ["a@example.com"]
+
+
+def test_gmail_reply_preserves_thread_headers_and_thread_id():
+    captured = {}
+
+    class Request:
+        def execute(self):
+            return {"id": "SENT-1", "threadId": "THREAD-1"}
+
+    class Messages:
+        def send(self, **kwargs):
+            captured.update(kwargs)
+            return Request()
+
+    class Users:
+        def messages(self):
+            return Messages()
+
+    class Service:
+        def users(self):
+            return Users()
+
+    adapter = GmailApiEmailAdapter(credentials_file="unused", token_file="unused")
+    adapter._service = lambda: Service()
+    request = EmailSendRequest(
+        to=["asker@company.com"], subject="Re: 작성 문의", body="마감은 17시입니다.",
+        thread_id="THREAD-1", in_reply_to="<question-1@company.com>",
+        references="<request-1@company.com>",
+    )
+    message = adapter._build_message(request)
+    assert message["In-Reply-To"] == "<question-1@company.com>"
+    assert "<request-1@company.com>" in message["References"]
+    assert "<question-1@company.com>" in message["References"]
+    result = adapter.send(request)
+    assert captured["body"]["threadId"] == "THREAD-1"
+    assert result.thread_id == "THREAD-1"
