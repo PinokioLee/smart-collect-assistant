@@ -108,9 +108,13 @@ def _seed_job(db_path: Path, root: Path, *, deadline: str = "2026-07-30 17:00") 
         "job_id": "SC-JOB",
         "source_message_id": "BENCH-REQUEST",
         "source_thread_id": "THREAD-SC-JOB",
+        "source_rfc_message_id": "<bench-request@company.com>",
         "title": "월간 실적 취합",
         "deadline": deadline,
         "recipients": [{"name": "제출자", "dept": "영업", "email": "user@company.com"}],
+        "requester_recipients": [
+            {"name": "요청자", "dept": "요청자", "email": "manager@company.com", "recipient_type": "to"},
+        ],
         "required_fields": ["부서명", "담당자", "금액"],
         "validation_rule": {
             "required_columns": ["부서명", "담당자", "금액"],
@@ -185,6 +189,8 @@ def _action_from_record(record: dict) -> str:
     if status == "general":
         return "archive"
     if status == "submission_accepted":
+        return "accept"
+    if intent == "completion" and artifacts.get("merged_file"):
         return "accept"
     if artifacts.get("validation_errors"):
         return "reject"

@@ -38,8 +38,12 @@ def _job(db, tmp_path, *, job_id="SC-JOB", recipients=None, deadline="2026-07-20
     _xlsx(template, [])
     return job_store.create_job({
         "job_id": job_id, "source_thread_id": "THREAD-SC-JOB",
+        "source_rfc_message_id": "<manager-request@company.com>",
         "title": "월간 실적 취합", "deadline": deadline,
         "recipients": recipients or [{"name": "사용자", "dept": "영업", "email": "user@company.com"}],
+        "requester_recipients": [
+            {"name": "팀장", "dept": "요청자", "email": "manager@company.com", "recipient_type": "to"},
+        ],
         "required_fields": ["부서명", "담당자", "금액"],
         "validation_rule": {
             "required_columns": ["부서명", "담당자", "금액"],
@@ -93,7 +97,9 @@ def test_03_request_creates_job_template_and_draft(tmp_path, monkeypatch):
     )
     assert record["status"] == "draft_ready"
     assert record["artifacts"]["job_id"] == "SC-REQ-1"
-    assert job_store.get_job("SC-REQ-1", db)["status"] == "awaiting_approval"
+    created_job = job_store.get_job("SC-REQ-1", db)
+    assert created_job["status"] == "awaiting_approval"
+    assert created_job["requester_recipients"][0]["email"] == "user@company.com"
 
 
 def test_04_valid_submission_is_accepted(tmp_path, monkeypatch):
@@ -104,9 +110,10 @@ def test_04_valid_submission_is_accepted(tmp_path, monkeypatch):
     monkeypatch.setattr(autonomous_graph, "classify_message", lambda *a, **k: _cls("collection", "submission"))
     record = autonomous_graph.run_mail_event(
         _message("SUB-OK", "[SC-JOB] 제출합니다", attachments=["valid.xlsx"], paths=[path]),
-        db_path=db, prefer_llm=False,
+        db_path=db, prefer_llm=False, auto_send_enabled=False,
     )
-    assert record["status"] == "submission_accepted"
+    assert record["status"] == "draft_ready"
+    assert record["intent"] == "completion"
     assert job_store.list_submissions("SC-JOB", db)[0]["status"] == "accepted"
 
 
@@ -140,9 +147,10 @@ def test_06_corrected_resubmission_is_revalidated(tmp_path, monkeypatch):
     )
     corrected = autonomous_graph.run_mail_event(
         _message("CORRECT", "[SC-JOB] 수정본 재제출", attachments=["good.xlsx"], paths=[good]),
-        db_path=db, prefer_llm=False,
+        db_path=db, prefer_llm=False, auto_send_enabled=False,
     )
-    assert corrected["status"] == "submission_accepted"
+    assert corrected["status"] == "draft_ready"
+    assert corrected["intent"] == "completion"
     assert {s["status"] for s in job_store.list_submissions("SC-JOB", db)} == {"rejected", "accepted"}
 
 
@@ -202,10 +210,12 @@ def test_11_all_valid_submissions_trigger_merge(tmp_path, monkeypatch):
     monkeypatch.setattr(autonomous_graph, "classify_message", lambda *a, **k: _cls("collection", "submission"))
     record = autonomous_graph.run_mail_event(
         _message("MERGE", "[SC-MERGE] 제출합니다", attachments=["merge.xlsx"], paths=[path]),
-        db_path=db, prefer_llm=False,
+        db_path=db, prefer_llm=False, auto_send_enabled=False,
     )
     assert Path(record["artifacts"]["merged_file"]).exists()
-    assert job_store.get_job("SC-MERGE", db)["status"] == "completed"
+    assert record["intent"] == "completion"
+    assert record["recipients"][0]["email"] == "manager@company.com"
+    assert job_store.get_job("SC-MERGE", db)["status"] == "awaiting_final_reply"
 
 
 def test_12_transient_worker_failure_retries_once_then_succeeds(tmp_path, monkeypatch):
@@ -382,8 +392,12 @@ def test_20_gmail_submission_runs_safe_self_correction_and_merges_corrected_copy
     )
     job_store.create_job({
         "job_id": "SC-QUALITY", "source_thread_id": "THREAD-QUALITY",
+        "source_rfc_message_id": "<quality-request@company.com>",
         "title": "품질 취합", "deadline": "2026-07-30 17:00",
         "recipients": [{"name": "사용자", "dept": "영업", "email": "user@company.com"}],
+        "requester_recipients": [
+            {"name": "팀장", "dept": "요청자", "email": "manager@company.com", "recipient_type": "to"},
+        ],
         "required_fields": ["부서명", "담당자", "제출일자", "긴급도"],
         "validation_rule": {
             "required_columns": ["부서명", "담당자", "제출일자", "긴급도"],
@@ -410,11 +424,12 @@ def test_20_gmail_submission_runs_safe_self_correction_and_merges_corrected_copy
             attachments=[submitted.name],
             attachment_paths=[str(submitted)],
         ),
-        db_path=db, prefer_llm=False,
+        db_path=db, prefer_llm=False, auto_send_enabled=False,
     )
 
     quality = record["artifacts"]["quality_pipeline"]
-    assert record["status"] == "submission_accepted"
+    assert record["status"] == "draft_ready"
+    assert record["intent"] == "completion"
     assert quality["rule_source"] == "job_contract"
     assert quality["self_correction"]["accepted"] is True
     assert quality["self_correction"]["applied_corrections"] == 2
@@ -423,3 +438,103 @@ def test_20_gmail_submission_runs_safe_self_correction_and_merges_corrected_copy
     merged = pd.read_excel(record["artifacts"]["merged_file"], dtype=str)
     assert merged.loc[0, "제출일자"] == "2026-07-20"
     assert merged.loc[0, "긴급도"] == "상"
+
+
+def test_21_completion_report_auto_replies_to_original_requester(tmp_path, monkeypatch):
+    db = tmp_path / "db.sqlite"
+    _job(db, tmp_path, job_id="SC-FINAL")
+    monkeypatch.setattr(autonomous_graph, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(
+        autonomous_graph, "classify_message",
+        lambda *a, **k: _cls("collection", "submission"),
+    )
+    monkeypatch.setattr(autonomous_graph, "settings", type("Settings", (), {
+        "azure_ready": False,
+        "auto_send_enabled": True,
+        "auto_send_allowed_domains": ("company.com",),
+        "auto_send_min_confidence": 0.90,
+    })())
+    captured = {}
+
+    def fake_send(request):
+        captured["request"] = request
+        return {
+            "status": "mock_sent", "message_id": "FINAL-MAIL-1",
+            "thread_id": request.thread_id, "recipients": request.to,
+        }
+
+    monkeypatch.setattr(inbox_pipeline, "send_email", fake_send)
+    path = _xlsx(tmp_path / "final.xlsx", [["영업", "홍길동", "1000"]])
+    record = autonomous_graph.run_mail_event(
+        _message("FINAL-SUB", "[SC-FINAL] 제출합니다", attachments=["final.xlsx"], paths=[path]),
+        db_path=db, prefer_llm=False, auto_send_enabled=True,
+    )
+
+    job = job_store.get_job("SC-FINAL", db)
+    assert record["status"] == "sent"
+    assert record["intent"] == "completion"
+    assert record["artifacts"]["final_validation"]["error_rows"] == 0
+    assert Path(record["artifacts"]["merged_file"]).exists()
+    assert captured["request"].to == ["manager@company.com"]
+    assert captured["request"].thread_id == "THREAD-SC-JOB"
+    assert captured["request"].in_reply_to == "<manager-request@company.com>"
+    assert job["status"] == "completed"
+    assert job["final_reply_status"] == "sent"
+    assert job["final_reply_message_id"] == "FINAL-MAIL-1"
+
+
+def test_22_cross_file_duplicate_blocks_completion_and_requests_rework(tmp_path, monkeypatch):
+    db = tmp_path / "db.sqlite"
+    _job(db, tmp_path, job_id="SC-DUP", recipients=[
+        {"name": "작성자1", "dept": "WG1", "email": "user1@company.com"},
+        {"name": "작성자2", "dept": "WG2", "email": "user2@company.com"},
+    ])
+    job = job_store.get_job("SC-DUP", db)
+    rule = dict(job["validation_rule"])
+    rule["duplicate_keys"] = ["부서명"]
+    job_store.create_job({**job, "validation_rule": rule}, db)
+    monkeypatch.setattr(autonomous_graph, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(
+        autonomous_graph, "classify_message",
+        lambda *a, **k: _cls("collection", "submission"),
+    )
+    first = _xlsx(tmp_path / "wg1.xlsx", [["공통부서", "홍길동", "1000"]])
+    second = _xlsx(tmp_path / "wg2.xlsx", [["공통부서", "김영희", "2000"]])
+
+    partial = autonomous_graph.run_mail_event(
+        _message("DUP-1", "[SC-DUP] 제출", attachments=["wg1.xlsx"], paths=[first], sender="user1@company.com"),
+        db_path=db, prefer_llm=False,
+    )
+    blocked = autonomous_graph.run_mail_event(
+        _message("DUP-2", "[SC-DUP] 제출", attachments=["wg2.xlsx"], paths=[second], sender="user2@company.com"),
+        db_path=db, prefer_llm=False,
+    )
+
+    assert partial["status"] == "submission_accepted"
+    assert blocked["status"] == "draft_ready"
+    assert "final_validation_failed" in blocked["decision"]["risk_flags"]
+    assert blocked["recipients"][0]["email"] == "user2@company.com"
+    assert job_store.get_job("SC-DUP", db)["status"] == "partial"
+    statuses = {item["sender"]: item["status"] for item in job_store.list_submissions("SC-DUP", db)}
+    assert statuses == {"user1@company.com": "accepted", "user2@company.com": "rejected"}
+
+
+def test_23_unexpected_submitter_never_counts_toward_completion(tmp_path, monkeypatch):
+    db = tmp_path / "db.sqlite"
+    _job(db, tmp_path, job_id="SC-EXPECTED", recipients=[
+        {"name": "작성자", "dept": "WG", "email": "expected@company.com"},
+    ])
+    path = _xlsx(tmp_path / "unexpected.xlsx", [["영업", "홍길동", "1000"]])
+    monkeypatch.setattr(
+        autonomous_graph, "classify_message",
+        lambda *a, **k: _cls("collection", "submission"),
+    )
+    record = autonomous_graph.run_mail_event(
+        _message(
+            "UNEXPECTED", "[SC-EXPECTED] 제출", attachments=["unexpected.xlsx"],
+            paths=[path], sender="other@company.com",
+        ),
+        db_path=db, prefer_llm=False,
+    )
+    assert record["status"] == "needs_review"
+    assert job_store.list_submissions("SC-EXPECTED", db) == []

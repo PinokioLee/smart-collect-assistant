@@ -16,6 +16,7 @@ APScheduler / 지금 실행
       Submission/Correction: 검증 → 반려 또는 병합
       Question: Job 사실 기반 답변 → 같은 Gmail thread로 회신
       Extension: Human Approval
+      Completion: 전원 제출 → 전체 교차 검증 → 병합본을 최초 요청자에게 회신
   → 발송 Policy Gate → Gmail Send Tool 또는 검토 큐
   → Worker 결과 Observation
       성공: 종료
@@ -79,6 +80,8 @@ SQLite의 각 메일 레코드에 다음을 보존한다.
 - Q&A RAG/Communication Agent: Job의 마감·작성항목·검증규칙 사실에 근거한 동일 thread 답변
 - Deadline Agent: 연장 요청은 사람 승인, 마감 임박 미제출자는 리마인드
 - Merge Agent: 전원 정상 제출 시 유효 행을 자동 병합
+- Final Validation Agent: 작성자 집합을 확인하고 전체 파일의 파일 간 중복까지 재검증, 오류 시 완료 차단
+- Completion/Report Agent: 검증 오류 0건인 병합본을 첨부해 최초 요청자·참조자에게 원래 thread로 회신
 - Security Agent: 스팸·피싱·프롬프트 인젝션 격리
 
 Collection Job 제목에는 `[SC-...]` 작업번호가 들어가므로 제출·질문·수정본을

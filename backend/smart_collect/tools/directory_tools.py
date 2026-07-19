@@ -136,6 +136,24 @@ def _contacts_from_headers(values: list[str]) -> list[dict]:
     return contacts
 
 
+def resolve_requester_recipients(message) -> list[dict]:
+    """최초 취합 요청의 회신 대상(발신자 + 참조자)을 보존한다.
+
+    작성 요청을 받을 ``contributors``와 최종 결과를 받을 ``requesters``는 서로 다른
+    역할이다. 발신자는 최종 회신의 To, 원본 참조자는 Cc로 기록한다.
+    """
+    primary = _contacts_from_headers([message.sender])
+    copied = _contacts_from_headers(list(message.cc or []))
+    seen = {item["email"] for item in primary}
+    out = [{**item, "recipient_type": "to"} for item in primary]
+    out.extend(
+        {**item, "recipient_type": "cc"}
+        for item in copied
+        if item["email"] not in seen
+    )
+    return out
+
+
 def resolve_collection_recipients(message) -> tuple[list[dict], str]:
     """취합 대상을 결정한다.
 

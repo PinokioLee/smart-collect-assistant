@@ -100,6 +100,27 @@ def test_recipient_defaults_to_original_sender_and_cc():
     ]
 
 
+def test_requester_recipients_preserve_to_and_cc_roles():
+    message = InboxMessage(
+        id="REQUESTER-ROLES",
+        sender="팀장 <manager@company.com>",
+        cc=["기획담당 <planner@company.com>"],
+        subject="월 실적 취합 요청",
+        body="W/G 리더에게 취합해 주세요.",
+    )
+    requesters = directory_tools.resolve_requester_recipients(message)
+    assert requesters == [
+        {
+            "name": "팀장", "dept": "원본 메일", "email": "manager@company.com",
+            "recipient_type": "to",
+        },
+        {
+            "name": "기획담당", "dept": "원본 메일", "email": "planner@company.com",
+            "recipient_type": "cc",
+        },
+    ]
+
+
 def test_explicit_department_uses_directory_instead_of_reply_all():
     message = InboxMessage(
         id="TARGET-1",
@@ -192,3 +213,46 @@ def test_sent_mail_can_be_resent_to_new_extra_recipient(monkeypatch):
     assert response["additional_only"] is True
     assert response["send_result"]["recipients"] == ["new@company.com"]
     assert captured["saved"]["artifacts"]["additional_sends"][0]["recipients"] == ["new@company.com"]
+
+
+def test_final_reply_approval_marks_job_completed_and_allows_manual_edits(monkeypatch):
+    record = {
+        "message_id": "FINAL-APPROVAL",
+        "status": "draft_ready",
+        "intent": "completion",
+        "recipients": [
+            {"name": "팀장", "dept": "요청자", "email": "manager@company.com"},
+            {"name": "참조", "dept": "요청자", "email": "observer@company.com"},
+        ],
+        "draft_subject": "기존 제목",
+        "draft_body": "기존 본문",
+        "artifacts": {
+            "job_id": "SC-FINAL-APPROVAL", "attachment_paths": [],
+            "cc_recipients": ["observer@company.com"],
+            "reply_context": {"thread_id": "SOURCE-THREAD"},
+        },
+    }
+    captured = {}
+    monkeypatch.setattr(api_module.store, "get_record", lambda _: record)
+    monkeypatch.setattr(api_module.store, "upsert_record", lambda value: captured.setdefault("saved", value))
+    monkeypatch.setattr(api_module.store, "mark_sent", lambda *a, **k: True)
+    monkeypatch.setattr(api_module.job_store, "update_job", lambda *a, **k: captured.setdefault("job", (a, k)))
+
+    def fake_send(request):
+        captured["request"] = request
+        return {"status": "mock_sent", "message_id": "FINAL-SENT", "thread_id": request.thread_id}
+
+    monkeypatch.setattr(api_module, "send_email", fake_send)
+    response = api_module.inbox_send("FINAL-APPROVAL", {
+        "recipients": ["manager@company.com", "observer@company.com"],
+        "subject": "수정한 최종 제목",
+        "body": "수정한 최종 본문",
+    })
+
+    assert response["additional_only"] is False
+    assert captured["request"].to == ["manager@company.com"]
+    assert captured["request"].cc == ["observer@company.com"]
+    assert captured["request"].subject == "수정한 최종 제목"
+    assert captured["request"].body == "수정한 최종 본문"
+    assert captured["job"][1]["status"] == "completed"
+    assert captured["job"][1]["final_reply_status"] == "sent"

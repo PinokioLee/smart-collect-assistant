@@ -179,14 +179,23 @@ def _record_from(
 
 
 def _send_record(record: dict) -> dict:
-    to = [r.get("email", "") for r in record.get("recipients", []) if r.get("email")]
+    cc = [
+        str(value).strip().lower()
+        for value in record.get("artifacts", {}).get("cc_recipients", [])
+        if str(value).strip()
+    ]
+    cc_set = set(cc)
+    to = [
+        r.get("email", "") for r in record.get("recipients", [])
+        if r.get("email") and str(r.get("email")).strip().lower() not in cc_set
+    ]
     paths = [
         p for p in record.get("artifacts", {}).get("attachment_paths", [])
         if Path(p).exists()
     ]
     reply = record.get("artifacts", {}).get("reply_context", {})
     result = send_email(EmailSendRequest(
-        to=to,
+        to=to, cc=cc,
         subject=record.get("draft_subject") or "[취합 요청]",
         body=record.get("draft_body") or "",
         attachment_paths=paths,

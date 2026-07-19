@@ -20,6 +20,7 @@ Request → Template + Communication
 Submission/Correction → Validation → Reject 또는 Merge
 Question → Grounded Q&A
 Extension/Deadline → Human Approval 또는 Reminder
+Completion → Final Cross-file Validation → Requester Reply
         ↓
 성공 종료 · 실패 재계획 · 위험 작업 사람 승인
 ```
@@ -37,10 +38,14 @@ Extension/Deadline → Human Approval 또는 Reminder
 - Gmail 제출의 안전한 Self-Correction(LLM 교정 제안 → 허용값·날짜 게이트 → 재검증 → 교정본 별도 저장)
 - 검증 실패 사실에 근거한 LLM 반려 메일 작성
 - 수정본 재검증, 정상 제출 병합, 미제출자 리마인드
+- 최초 요청자·참조자와 작성자 그룹을 Job에서 분리 저장
+- 작성자 전원 제출 후 전체 파일 교차 검증(파일 간 중복 포함), 오류 시 완료 차단
+- 최종 검증 오류 0건이면 병합본을 첨부한 완료 회신을 원래 요청자 Gmail thread로 발송 또는 승인 대기
 - 취합 대상자의 회신 질문을 원래 Gmail 대화와 Job에 연결해 근거 기반 자동답변
 - 기한·양식 변경, 예외 승인, 비대상자 질문은 자동답변하지 않고 승인 큐로 전환
 - Worker 실패 observation → 일시 오류 1회 재시도 → 구조적 실패/재실패 Human Review
 - Agent Job과 실행 로그를 보여주는 React UI
+- 승인 대기 메일의 제목·본문·수신자를 화면에서 직접 수정한 뒤 발송
 
 ## 안전 기본값
 

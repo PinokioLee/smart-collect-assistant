@@ -32,15 +32,21 @@ def init_job_tables(db_path: str | Path | None = None) -> None:
             job_id TEXT PRIMARY KEY,
             source_message_id TEXT,
             source_thread_id TEXT,
+            source_rfc_message_id TEXT,
+            source_references TEXT,
             outbound_thread_id TEXT,
             title TEXT,
             deadline TEXT,
             recipients TEXT,
+            requester_recipients TEXT,
             required_fields TEXT,
             validation_rule TEXT,
             template_id TEXT,
             template_path TEXT,
             status TEXT,
+            final_reply_status TEXT,
+            final_reply_message_id TEXT,
+            final_replied_at TEXT,
             created_at TEXT,
             updated_at TEXT,
             result TEXT
@@ -70,10 +76,20 @@ def init_job_tables(db_path: str | Path | None = None) -> None:
         CREATE INDEX IF NOT EXISTS idx_actions_event ON agent_actions(event_id, seq);
         CREATE INDEX IF NOT EXISTS idx_submissions_job ON job_submissions(job_id);
         """)
-        # 기존 로컬 DB도 데이터 삭제 없이 회신 thread 추적 필드를 추가한다.
+        # 기존 로컬 DB도 데이터 삭제 없이 역할/최종 회신 필드를 증분 추가한다.
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(collection_jobs)")}
-        if "outbound_thread_id" not in columns:
-            conn.execute("ALTER TABLE collection_jobs ADD COLUMN outbound_thread_id TEXT")
+        migrations = {
+            "outbound_thread_id": "TEXT",
+            "source_rfc_message_id": "TEXT",
+            "source_references": "TEXT",
+            "requester_recipients": "TEXT",
+            "final_reply_status": "TEXT",
+            "final_reply_message_id": "TEXT",
+            "final_replied_at": "TEXT",
+        }
+        for name, sql_type in migrations.items():
+            if name not in columns:
+                conn.execute(f"ALTER TABLE collection_jobs ADD COLUMN {name} {sql_type}")
         conn.commit()
 
 
@@ -91,7 +107,7 @@ def _job(row: sqlite3.Row | None) -> dict | None:
         return None
     out = dict(row)
     for key, default in (
-        ("recipients", []), ("required_fields", []),
+        ("recipients", []), ("requester_recipients", []), ("required_fields", []),
         ("validation_rule", {}), ("result", {}),
     ):
         out[key] = _loads(out.get(key), default)
@@ -105,15 +121,21 @@ def create_job(job: dict, db_path: str | Path | None = None) -> dict:
         "job_id": job["job_id"],
         "source_message_id": job.get("source_message_id"),
         "source_thread_id": job.get("source_thread_id"),
+        "source_rfc_message_id": job.get("source_rfc_message_id"),
+        "source_references": job.get("source_references"),
         "outbound_thread_id": job.get("outbound_thread_id"),
         "title": job.get("title"),
         "deadline": job.get("deadline"),
         "recipients": json.dumps(job.get("recipients", []), ensure_ascii=False),
+        "requester_recipients": json.dumps(job.get("requester_recipients", []), ensure_ascii=False),
         "required_fields": json.dumps(job.get("required_fields", []), ensure_ascii=False),
         "validation_rule": json.dumps(job.get("validation_rule", {}), ensure_ascii=False),
         "template_id": job.get("template_id"),
         "template_path": job.get("template_path"),
         "status": job.get("status", "collecting"),
+        "final_reply_status": job.get("final_reply_status"),
+        "final_reply_message_id": job.get("final_reply_message_id"),
+        "final_replied_at": job.get("final_replied_at"),
         "created_at": job.get("created_at", now),
         "updated_at": now,
         "result": json.dumps(job.get("result", {}), ensure_ascii=False),
@@ -151,6 +173,10 @@ def list_jobs(status: str | None = None, db_path: str | Path | None = None) -> l
 def update_job(
     job_id: str, *, status: str | None = None, result: dict | None = None,
     outbound_thread_id: str | None = None,
+    recipients: list[dict] | None = None,
+    final_reply_status: str | None = None,
+    final_reply_message_id: str | None = None,
+    final_replied_at: str | None = None,
     db_path: str | Path | None = None,
 ) -> None:
     fields = ["updated_at=?"]
@@ -164,6 +190,18 @@ def update_job(
     if outbound_thread_id:
         fields.append("outbound_thread_id=?")
         values.append(outbound_thread_id)
+    if recipients is not None:
+        fields.append("recipients=?")
+        values.append(json.dumps(recipients, ensure_ascii=False))
+    if final_reply_status is not None:
+        fields.append("final_reply_status=?")
+        values.append(final_reply_status)
+    if final_reply_message_id is not None:
+        fields.append("final_reply_message_id=?")
+        values.append(final_reply_message_id)
+    if final_replied_at is not None:
+        fields.append("final_replied_at=?")
+        values.append(final_replied_at)
     values.append(job_id)
     with _connect(db_path) as conn:
         conn.execute(f"UPDATE collection_jobs SET {', '.join(fields)} WHERE job_id=?", values)

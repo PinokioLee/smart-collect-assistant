@@ -9,6 +9,8 @@ status 값
   general       : 일반 메일
   quarantined   : 스팸·피싱·프롬프트 인젝션 등 위험 메일 격리
   sent          : 검토 후 발송 완료
+  submission_accepted : 정상 제출 등록(아직 일부 작성자 미제출)
+  awaiting_final_reply : 최종 검증·병합 완료 후 최초 요청자 회신 대기(Job 상태)
   error         : 처리 중 오류
 """
 

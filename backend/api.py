@@ -231,6 +231,26 @@ def agent_jobs(status: str | None = None) -> dict:
     return {"jobs": jobs, "count": len(jobs)}
 
 
+@app.get("/api/agent/jobs/{job_id}/final-file")
+def agent_job_final_file(job_id: str) -> FileResponse:
+    """최종 검증을 통과한 자율 취합 Job의 병합본을 내려받는다."""
+    job = job_store.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="취합 Job을 찾을 수 없습니다.")
+    path = Path(str((job.get("result") or {}).get("merged_file") or ""))
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="최종 취합 파일이 아직 생성되지 않았습니다.")
+    try:
+        path.resolve().relative_to(DATA_DIR.resolve())
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail="허용되지 않은 파일 경로입니다.") from exc
+    return FileResponse(
+        path,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename=path.name,
+    )
+
+
 @app.get("/api/agent/actions/{event_id}")
 def agent_actions(event_id: str) -> dict:
     actions = job_store.list_actions(event_id)
@@ -261,7 +281,7 @@ def schedule_run_now() -> dict:
 
 @app.post("/api/inbox/{message_id}/send")
 def inbox_send(message_id: str, payload: dict | None = None) -> dict:
-    """승인 발송 또는 처리 완료 메일의 추가 수신자 발송."""
+    """승인 초안(요청·반려·Q&A·최종 회신) 발송 또는 완료 건 추가 발송."""
     rec = store.get_record(message_id)
     if not rec:
         raise HTTPException(status_code=404, detail="해당 메일을 찾을 수 없습니다.")
@@ -285,7 +305,13 @@ def inbox_send(message_id: str, payload: dict | None = None) -> dict:
                 out.append(email)
         return out
 
-    base_to = normalize(c.get("email", "") for c in rec.get("recipients", []))
+    raw_override = payload.get("recipients")
+    if isinstance(raw_override, str):
+        raw_override = raw_override.split(",")
+    base_to = normalize(
+        raw_override if raw_override is not None
+        else (c.get("email", "") for c in rec.get("recipients", []))
+    )
     extras = normalize(raw_extras)
     if rec["status"] == "sent":
         # 이미 받은 사람에게 중복 발송하지 않고 새로 추가한 사람에게만 보낸다.
@@ -298,10 +324,29 @@ def inbox_send(message_id: str, payload: dict | None = None) -> dict:
         detail = "추가 발송할 새 수신자를 입력해 주세요." if rec["status"] == "sent" else "수신자가 없습니다."
         raise HTTPException(status_code=400, detail=detail)
 
-    reply = rec.get("artifacts", {}).get("reply_context", {})
+    if rec["status"] == "draft_ready":
+        override_subject = str(payload.get("subject") or "").strip()
+        override_body = str(payload.get("body") or "").strip()
+        if override_subject:
+            rec["draft_subject"] = override_subject
+        if override_body:
+            rec["draft_body"] = override_body
+
+    artifacts = rec.get("artifacts", {})
+    reply = artifacts.get("reply_context", {})
+    configured_cc = set(normalize(artifacts.get("cc_recipients", [])))
+    cc = [email for email in base_to if email in configured_cc]
+    send_to = [email for email in to if email not in configured_cc]
+    if additional_only:
+        send_to = to
+        cc = []
+    if not send_to and cc:
+        # Gmail은 To가 비어 있는 발송을 피하고 첫 주소를 To로 승격한다.
+        send_to = [cc.pop(0)]
     result = send_email(
         EmailSendRequest(
-            to=to,
+            to=send_to,
+            cc=cc,
             subject=rec.get("draft_subject") or "[취합 요청]",
             body=rec.get("draft_body") or "",
             attachment_paths=[
@@ -321,11 +366,16 @@ def inbox_send(message_id: str, payload: dict | None = None) -> dict:
         })
         store.upsert_record(rec)
     else:
-        existing = {c.get("email", "").lower() for c in rec.get("recipients", [])}
-        rec["recipients"].extend(
-            {"name": email.split("@", 1)[0], "dept": "수동 추가", "email": email}
-            for email in extras if email not in existing
-        )
+        original_by_email = {
+            str(c.get("email") or "").strip().lower(): c
+            for c in rec.get("recipients", []) if c.get("email")
+        }
+        rec["recipients"] = [
+            original_by_email.get(email) or {
+                "name": email.split("@", 1)[0], "dept": "수동 지정", "email": email,
+            }
+            for email in to
+        ]
         store.upsert_record(rec)
         store.mark_sent(message_id, result.get("message_id"))
         job_id = rec.get("artifacts", {}).get("job_id")
@@ -333,6 +383,14 @@ def inbox_send(message_id: str, payload: dict | None = None) -> dict:
             job_store.update_job(
                 job_id, status="collecting",
                 outbound_thread_id=str(result.get("thread_id") or "") or None,
+                recipients=rec["recipients"],
+            )
+        elif job_id and rec.get("intent") == "completion":
+            job_store.update_job(
+                job_id, status="completed", result=rec.get("artifacts", {}),
+                final_reply_status="sent",
+                final_reply_message_id=result.get("message_id"),
+                final_replied_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             )
     return {
         "message_id": message_id,

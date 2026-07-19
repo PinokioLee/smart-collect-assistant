@@ -242,11 +242,16 @@ export default function MinimalApp() {
     }
   }
 
-  async function approve(item: InboxItem, extraRecipients: string[] = []) {
+  async function approve(item: InboxItem, options: {
+    extraRecipients?: string[];
+    recipients?: string[];
+    subject?: string;
+    body?: string;
+  } = {}) {
     clearFeedback();
     setSendingId(item.message_id);
     try {
-      const response = await inboxSend(item.message_id, extraRecipients);
+      const response = await inboxSend(item.message_id, options);
       await refreshAutomation();
       setNotice(
         `${health?.email_send_mode === "mock" ? "Mock " : ""}${response.additional_only ? "추가 " : ""}발송을 완료했습니다.`
@@ -688,7 +693,12 @@ interface OperateViewProps {
   visibleQueue: InboxItem[];
   onRun: () => void;
   onSaveSchedule: () => void;
-  onApprove: (item: InboxItem, extraRecipients?: string[]) => void;
+  onApprove: (item: InboxItem, options?: {
+    extraRecipients?: string[];
+    recipients?: string[];
+    subject?: string;
+    body?: string;
+  }) => void;
 }
 
 function OperateView(props: OperateViewProps) {
@@ -845,13 +855,29 @@ function OperateView(props: OperateViewProps) {
   );
 }
 
-function QueueCard({ item, sending, onApprove }: { item: InboxItem; sending: boolean; onApprove: (item: InboxItem, extraRecipients?: string[]) => void }) {
+function QueueCard({ item, sending, onApprove }: {
+  item: InboxItem;
+  sending: boolean;
+  onApprove: (item: InboxItem, options?: {
+    extraRecipients?: string[];
+    recipients?: string[];
+    subject?: string;
+    body?: string;
+  }) => void;
+}) {
   const [extraRecipients, setExtraRecipients] = useState("");
+  const [draftRecipients, setDraftRecipients] = useState(
+    () => item.recipients?.map((recipient) => recipient.email).join(", ") ?? ""
+  );
+  const [draftSubject, setDraftSubject] = useState(item.draft_subject ?? "");
+  const [draftBody, setDraftBody] = useState(item.draft_body ?? "");
   const status = item.status;
   const confidence = Math.round(item.confidence * 100);
   const action = item.decision?.action;
   const isQuestion = item.intent === "question";
+  const isCompletion = item.intent === "completion";
   const extras = extraRecipients.split(",").map((value) => value.trim()).filter(Boolean);
+  const editedRecipients = draftRecipients.split(",").map((value) => value.trim()).filter(Boolean);
   const canSend = status === "draft_ready" || status === "sent";
   const recipientSource = item.artifacts?.recipient_source === "original_sender_cc"
     ? "원본 작성자·참조자"
@@ -859,8 +885,12 @@ function QueueCard({ item, sending, onApprove }: { item: InboxItem; sending: boo
       ? "메일에 명시된 대상"
       : item.artifacts?.recipient_source === "question_sender"
         ? "질문 보낸 사람"
+      : item.artifacts?.recipient_source === "original_requester_cc"
+        ? "최초 요청자·참조자"
       : "확인 필요";
-  const draftKind = isQuestion
+  const draftKind = isCompletion
+    ? "최종 취합 결과 회신"
+    : isQuestion
     ? "취합 문의 답변"
     : item.artifacts?.strategy === "generate" ? "새 양식 생성" : "첨부 양식 사용";
   return (
@@ -897,6 +927,7 @@ function QueueCard({ item, sending, onApprove }: { item: InboxItem; sending: boo
       {status === "quarantined" && <p className="reason-box danger">스팸, 위험 명령 또는 프롬프트 인젝션 가능성을 탐지해 실행을 차단했습니다.</p>}
       {status === "submission_accepted" && <p className="reason-box success">제출 파일의 구조와 값을 검증했습니다. 정상 데이터로 반영할 수 있습니다.</p>}
       {status === "sent" && isQuestion && <p className="reason-box success">저장된 취합 Job 근거로 질문자에게 자동 답변했습니다.</p>}
+      {status === "sent" && isCompletion && <p className="reason-box success">최종 검증을 통과한 취합본을 최초 요청자에게 회신했습니다.</p>}
 
       {canSend && (
         <div className="recipient-box">
@@ -904,28 +935,57 @@ function QueueCard({ item, sending, onApprove }: { item: InboxItem; sending: boo
             <span>발송 대상</span>
             <small>{recipientSource}</small>
           </div>
-          <div className="recipient-chips">
-            {item.recipients?.length
-              ? item.recipients.map((recipient) => <span key={recipient.email}>{recipient.name || recipient.email}<small>{recipient.email}</small></span>)
-              : <em>기본 수신자가 없습니다.</em>}
-          </div>
-          <div className="recipient-add">
-            <label htmlFor={`extra-${item.message_id}`}>{status === "sent" ? "추가로 다시 보낼 사람" : "추가할 사람"}</label>
-            <div>
+          {status === "draft_ready" ? (
+            <>
+              <label htmlFor={`recipients-${item.message_id}`}>수신자 · 쉼표로 구분해 추가·삭제·교체 가능</label>
               <input
-                id={`extra-${item.message_id}`}
-                name={`extra-recipients-${item.message_id}`}
+                id={`recipients-${item.message_id}`}
                 inputMode="email"
                 autoComplete="off"
                 spellCheck={false}
-                value={extraRecipients}
-                onChange={(event) => setExtraRecipients(event.target.value)}
-                placeholder="email@company.com…"
+                value={draftRecipients}
+                onChange={(event) => setDraftRecipients(event.target.value)}
               />
+              <label htmlFor={`subject-${item.message_id}`}>메일 제목</label>
+              <input
+                id={`subject-${item.message_id}`}
+                value={draftSubject}
+                onChange={(event) => setDraftSubject(event.target.value)}
+              />
+              <label htmlFor={`body-${item.message_id}`}>메일 본문</label>
+              <textarea
+                id={`body-${item.message_id}`}
+                rows={8}
+                value={draftBody}
+                onChange={(event) => setDraftBody(event.target.value)}
+              />
+            </>
+          ) : (
+            <div className="recipient-chips">
+              {item.recipients?.length
+                ? item.recipients.map((recipient) => <span key={recipient.email}>{recipient.name || recipient.email}<small>{recipient.email}</small></span>)
+                : <em>기본 수신자가 없습니다.</em>}
+            </div>
+          )}
+          <div className="recipient-add">
+            <label htmlFor={`extra-${item.message_id}`}>{status === "sent" ? "추가로 다시 보낼 사람" : ""}</label>
+            <div>
+              {status === "sent" && <input
+                  id={`extra-${item.message_id}`}
+                  name={`extra-recipients-${item.message_id}`}
+                  inputMode="email"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={extraRecipients}
+                  onChange={(event) => setExtraRecipients(event.target.value)}
+                  placeholder="email@company.com…"
+                />}
               <button
                 className={`button ${status === "draft_ready" ? "primary-button" : "secondary-button"}`}
-                onClick={() => onApprove(item, extras)}
-                disabled={sending || (status === "sent" && extras.length === 0)}
+                onClick={() => onApprove(item, status === "sent"
+                  ? { extraRecipients: extras }
+                  : { recipients: editedRecipients, subject: draftSubject, body: draftBody })}
+                disabled={sending || (status === "sent" ? extras.length === 0 : !editedRecipients.length || !draftSubject.trim() || !draftBody.trim())}
               >
                 {sending ? "발송 중…" : status === "sent" ? "추가 발송" : "확인 후 발송"}
               </button>
@@ -933,7 +993,7 @@ function QueueCard({ item, sending, onApprove }: { item: InboxItem; sending: boo
           </div>
           {!isQuestion && (
             <div className="attachment-line">
-              <span>{item.artifacts?.strategy === "generate" ? "새로 생성한 양식" : "받은 첨부 양식"}</span>
+              <span>{isCompletion ? "최종 취합본" : item.artifacts?.strategy === "generate" ? "새로 생성한 양식" : "받은 첨부 양식"}</span>
               <strong>{item.artifacts?.filename || "첨부 없음"}</strong>
               {item.artifacts?.download && <a href={item.artifacts.download}>양식 확인</a>}
             </div>

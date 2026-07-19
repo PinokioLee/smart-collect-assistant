@@ -8,6 +8,7 @@ Observation으로 다시 받아 실패 시 재계획하고, 두 번째 실패는
 from __future__ import annotations
 
 import re
+from datetime import datetime
 from email.utils import parseaddr
 from pathlib import Path
 from typing import Any, TypedDict
@@ -267,13 +268,18 @@ def _request_worker(state: InboxAgentState) -> dict:
         draft["mail_body"] = f"취합 작업번호: {jid}\n\n{draft.get('mail_body') or ''}"
         artifacts["job_id"] = jid
         paths = artifacts.get("attachment_paths", [])
+        from .tools.directory_tools import resolve_requester_recipients
+        requester_recipients = resolve_requester_recipients(msg)
         job_store.create_job({
             "job_id": jid,
             "source_message_id": msg.id,
             "source_thread_id": msg.thread_id,
+            "source_rfc_message_id": msg.rfc_message_id,
+            "source_references": msg.references,
             "title": artifacts.get("requirements", {}).get("request_title") or msg.subject,
             "deadline": artifacts.get("requirements", {}).get("deadline"),
             "recipients": recipients,
+            "requester_recipients": requester_recipients,
             "required_fields": artifacts.get("requirements", {}).get("required_fields", []),
             "validation_rule": artifacts.get("validation_rule", {}),
             "template_id": artifacts.get("template_id"),
@@ -417,12 +423,178 @@ def _persist_corrected_submission(
     return persisted, paths
 
 
+def _completion_draft(job: dict, facts: dict, *, prefer_llm: bool) -> dict:
+    """최초 요청자에게 보낼 근거 기반 최종 완료 회신을 만든다."""
+    if prefer_llm and settings.azure_ready:
+        try:
+            from .llm import chat_json
+
+            data = chat_json([{"role": "user", "content": f"""당신은 취합 완료 보고 Agent입니다.
+아래 확정된 사실만 사용해 최초 요청자에게 보낼 짧고 명확한 완료 회신을 작성하세요.
+추측하거나 성과를 과장하지 말고, 첨부된 최종 취합본을 확인해 달라고 안내하세요.
+JSON만 응답: {{"subject":"제목","body":"본문"}}
+확정 사실: {facts}"""}], schema_name="completion_report_mail", schema={
+                "type": "object",
+                "properties": {
+                    "subject": {"type": "string"},
+                    "body": {"type": "string"},
+                },
+                "required": ["subject", "body"],
+                "additionalProperties": False,
+            }, temperature=0.2)
+            if data and data.get("body"):
+                subject = str(data.get("subject") or "취합 완료 결과 회신")
+                if not subject.startswith(f"[{job['job_id']}]"):
+                    subject = f"[{job['job_id']}] {subject}"
+                return {"mail_subject": subject, "mail_body": str(data["body"])}
+        except Exception:
+            pass
+    return {
+        "mail_subject": f"[{job['job_id']}] {job.get('title') or '자료 취합'} 완료 결과 회신",
+        "mail_body": (
+            "안녕하세요.\n\n"
+            f"요청하신 '{job.get('title') or '자료 취합'}'을 완료했습니다.\n"
+            f"- 작성 대상: {facts['expected_contributors']}명\n"
+            f"- 정상 제출: {facts['accepted_contributors']}명\n"
+            f"- 최종 취합 행: {facts['merged_rows']}행\n"
+            f"- 최종 검증 오류: {facts['final_error_rows']}건\n\n"
+            "최종 취합본을 첨부드리오니 확인 부탁드립니다.\n\n감사합니다."
+        ),
+    }
+
+
+def _completion_auto_allowed(job: dict, state: InboxAgentState, merged_path: str) -> bool:
+    enabled = settings.auto_send_enabled if state.get("auto_send_enabled") is None else state.get("auto_send_enabled")
+    requesters = job.get("requester_recipients") or []
+    emails = [str(item.get("email") or "").strip().lower() for item in requesters]
+    return bool(
+        enabled
+        and Path(merged_path).exists()
+        and emails
+        and settings.auto_send_allowed_domains
+        and all(
+            "@" in email and email.rsplit("@", 1)[-1] in settings.auto_send_allowed_domains
+            for email in emails
+        )
+    )
+
+
+def _completion_record(
+    state: InboxAgentState,
+    job: dict,
+    *,
+    merged_path: str,
+    merged_rows: int,
+    final_validation,
+    accepted_count: int,
+    quality_pipeline: dict | None = None,
+) -> dict:
+    """최종 검증을 통과한 Job의 요청자 회신을 생성하고 필요 시 자동 발송한다."""
+    from .inbox_pipeline import _send_record
+
+    requesters = list(job.get("requester_recipients") or [])
+    facts = {
+        "job_id": job["job_id"],
+        "title": job.get("title"),
+        "expected_contributors": len(job.get("recipients") or []),
+        "accepted_contributors": accepted_count,
+        "merged_rows": merged_rows,
+        "final_error_rows": final_validation.error_rows,
+        "final_error_details": len(final_validation.error_details),
+    }
+    draft = _completion_draft(job, facts, prefer_llm=state.get("prefer_llm", True))
+    cc = [
+        str(item.get("email") or "").strip().lower()
+        for item in requesters if item.get("recipient_type") == "cc" and item.get("email")
+    ]
+    auto = _completion_auto_allowed(job, state, merged_path)
+    risks = [] if requesters else ["missing_requester_recipients"]
+    record = _base_record(
+        state,
+        "draft_ready" if requesters else "needs_review",
+        draft=draft,
+        recipients=requesters,
+        artifacts={
+            "job_id": job["job_id"],
+            "strategy": "final_report",
+            "recipient_source": "original_requester_cc",
+            "filename": Path(merged_path).name,
+            "download": f"/api/agent/jobs/{job['job_id']}/final-file",
+            "attachment_paths": [merged_path],
+            "cc_recipients": cc,
+            "merged_file": merged_path,
+            "merged_rows": merged_rows,
+            "final_validation": final_validation.model_dump(),
+            "completion_facts": facts,
+            "quality_pipeline": quality_pipeline or {},
+            "reply_context": {
+                "thread_id": job.get("source_thread_id") or "",
+                "in_reply_to": job.get("source_rfc_message_id") or "",
+                "references": job.get("source_references") or "",
+            },
+        },
+    )
+    record["intent"] = "completion"
+    record["decision"] = {
+        "action": "auto_send" if auto else "review",
+        "source": "completion-policy",
+        "complexity": "simple",
+        "reasons": ["작성자 전원 정상 제출", "최종 통합 검증 오류 0건", "최종 취합본 생성 완료"],
+        "risk_flags": risks,
+    }
+    if auto and requesters:
+        record = _send_record(record)
+        job_store.update_job(
+            job["job_id"], status="completed", result=record["artifacts"],
+            final_reply_status="sent",
+            final_reply_message_id=record.get("sent_message_id"),
+            final_replied_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            db_path=_db(state),
+        )
+    else:
+        job_store.update_job(
+            job["job_id"], status="awaiting_final_reply", result=record["artifacts"],
+            final_reply_status="draft_ready" if requesters else "needs_review",
+            db_path=_db(state),
+        )
+    _log(state, "Completion/Report Agent", "prepare_final_reply", "success", {
+        "job_id": job["job_id"], "auto_sent": bool(auto and requesters),
+        "requester_count": len(requesters), "merged_rows": merged_rows,
+    })
+    return record
+
+
+def _submission_senders_for_errors(submissions: list[dict], errors: list[dict]) -> list[str]:
+    affected_files = {str(error.get("file") or "") for error in errors}
+    senders: list[str] = []
+    for submission in submissions:
+        names = {Path(path).name for path in submission.get("attachment_paths") or []}
+        sender = str(submission.get("sender") or "").strip().lower()
+        if sender and names & affected_files and sender not in senders:
+            senders.append(sender)
+    return senders
+
+
 def _submission_worker(state: InboxAgentState) -> dict:
     msg, cls = state["message"], state["classification"]
     job = job_store.find_job_for_message(f"{msg.subject}\n{msg.body}", msg.thread_id, _db(state))
     if not job:
         _log(state, "Validation Agent", "match_collection_job", "failure", {"reason": "job_not_found"})
         return {"outcome": "failure", "observation": {"reason": "job_not_found"}, "terminal": False}
+    email = _sender_email(msg)
+    expected_submitters = {
+        str(item.get("email") or "").strip().lower()
+        for item in job.get("recipients") or [] if item.get("email")
+    }
+    if expected_submitters and email not in expected_submitters:
+        _log(state, "Validation Agent", "verify_submitter", "failure", {
+            "reason": "unexpected_submitter", "sender": email,
+        })
+        return {
+            "job_id": job["job_id"], "outcome": "failure",
+            "observation": {"reason": "unexpected_submitter", "sender": email},
+            "terminal": False,
+        }
     paths = [p for p in msg.attachment_paths if Path(p).suffix.lower() in {".xlsx", ".xls"} and Path(p).exists()]
     if not paths:
         _log(state, "Validation Agent", "load_submission", "failure", {"reason": "attachment_unavailable"})
@@ -460,7 +632,6 @@ def _submission_worker(state: InboxAgentState) -> dict:
         "errors_after": result.error_rows,
     })
 
-    email = _sender_email(msg)
     if errors:
         job_store.add_submission({
             "job_id": job["job_id"], "message_id": msg.id, "sender": email,
@@ -508,8 +679,8 @@ def _submission_worker(state: InboxAgentState) -> dict:
         "submitted_at": msg.received_at,
     }, _db(state))
     accepted = [s for s in job_store.list_submissions(job["job_id"], _db(state)) if s["status"] == "accepted"]
-    recipient_count = len(job.get("recipients") or [])
-    complete = recipient_count > 0 and len({s["sender"] for s in accepted}) >= recipient_count
+    accepted_senders = {str(s.get("sender") or "").strip().lower() for s in accepted}
+    complete = bool(expected_submitters) and expected_submitters.issubset(accepted_senders)
     artifacts: dict[str, Any] = {
         "job_id": job["job_id"], "validation": result.model_dump(),
         "quality_pipeline": quality,
@@ -518,10 +689,50 @@ def _submission_worker(state: InboxAgentState) -> dict:
         all_paths = [p for s in accepted for p in s["attachment_paths"]]
         loaded_all = load_excel_files(all_paths)
         final_validation = validate_excel_data(loaded_all, rule)
+        if final_validation.error_details:
+            final_errors = [item.model_dump() for item in final_validation.error_details]
+            affected_senders = _submission_senders_for_errors(accepted, final_errors)
+            for submission in accepted:
+                if str(submission.get("sender") or "").strip().lower() in affected_senders:
+                    job_store.add_submission({**submission, "status": "rejected", "errors": final_errors}, _db(state))
+            draft = _rejection_draft(job, final_errors, prefer_llm=state.get("prefer_llm", True))
+            recipients = [{"name": sender, "dept": "", "email": sender} for sender in affected_senders]
+            record = _base_record(
+                state, "draft_ready" if recipients else "needs_review",
+                draft=draft, recipients=recipients,
+                artifacts={
+                    "job_id": job["job_id"], "validation_errors": final_errors,
+                    "final_validation": final_validation.model_dump(),
+                    "strategy": "final_validation_rejection",
+                    "recipient_source": "final_validation_error_submitter",
+                },
+            )
+            record["decision"] = {
+                "action": "review", "source": "final-validation-policy",
+                "complexity": "complex",
+                "reasons": ["파일별 검증 후 전체 교차 검증에서 오류 발견"],
+                "risk_flags": ["final_validation_failed"],
+            }
+            job_store.update_job(
+                job["job_id"], status="partial",
+                result={"final_validation": final_validation.model_dump()},
+                db_path=_db(state),
+            )
+            _log(state, "Final Validation Agent", "block_completion", "success", {
+                "error_count": len(final_errors), "affected_senders": affected_senders,
+            })
+            return {"record": record, "job_id": job["job_id"], "outcome": "success", "terminal": True}
         out = DATA_DIR / "merged_files" / f"{job['job_id']}_merged.xlsx"
         merged_path, rows = merge_valid_rows(loaded_all, final_validation, out)
-        artifacts.update({"merged_file": merged_path, "merged_rows": rows})
-        job_store.update_job(job["job_id"], status="completed", result=artifacts, db_path=_db(state))
+        record = _completion_record(
+            state, job, merged_path=merged_path, merged_rows=rows,
+            final_validation=final_validation, accepted_count=len(expected_submitters),
+            quality_pipeline=quality,
+        )
+        _log(state, "Final Validation Agent", "approve_final_result", "success", {
+            "job_id": job["job_id"], "merged_rows": rows, "errors": 0,
+        })
+        return {"record": record, "job_id": job["job_id"], "outcome": "success", "terminal": True}
     else:
         job_store.update_job(job["job_id"], status="partial", result={"accepted": len(accepted)}, db_path=_db(state))
     record = _base_record(state, "submission_accepted", artifacts=artifacts)

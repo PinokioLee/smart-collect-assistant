@@ -1,339 +1,314 @@
 PoC 모듈 구현
-핵심 기능 PoC (Proof of Concept) 구현
+최종 구현 기준 핵심 모듈, 동작 원리 및 기술 선택
+
 
 ### 핵심 구현 내용
 
-이번 PoC 단계에서 실제 코드로 구현된 핵심 기능들을 **동작 원리**와 **사용 기술** 중심으로 상세히 기술합니다.
+초기 PoC의 메일 분석·Excel 검증·병합 기능을 실제 Gmail 이벤트 기반 멀티 에이전트로 확장하였다. 최종 구현은 “화면에 메일을 붙여 넣고 한 번 실행하는 도구”가 아니라, 메일 도착을 감지하고 업무 문맥에 따라 요청·질문·제출·수정·연장 처리를 이어가는 서비스다.
 
-**1.1 에이전트 워크플로우 (Agent Workflow)**
+#### 1.1 이벤트 기반 멀티 에이전트 워크플로우
 
-* **구현 기능:** Supervisor Agent 기반 멀티 에이전트 워크플로우
-
-  * Smart Collect Multi-Agent System은 단일 Agent가 모든 업무를 처리하는 구조가 아니라, Supervisor Agent가 전체 업무 흐름을 관리하고 전문 Agent들이 역할별 작업을 수행하는 구조로 구현하였다.
-
-  * 구성 Agent는 다음과 같다.
+* 구현 위치: `backend/smart_collect/autonomous_graph.py`
+* 운영 진입점: `run_mail_event()`
+* 비교 실험 진입점: `run_fixed_mail_event()`
 
 ```text
-Supervisor Agent
-Email Agent
-Requirement Analysis Agent
-RAG Reference Agent
-Guide Draft Agent
-Submission Tracking Agent
-Excel Validation Agent
-Report Agent
+START → Intake → Supervisor
+                    ├─ General Mail Agent → END
+                    ├─ Security Agent → END
+                    ├─ Request Worker ─────┐
+                    ├─ Submission Worker ──┤
+                    ├─ Q&A Worker ─────────┤→ Observation
+                    ├─ Extension Worker ───┘     ├─ 성공 → END
+                    └─ Human Review → END        └─ 실패 → Supervisor 재계획
 ```
 
-* Supervisor Agent는 현재 업무 상태를 확인한 뒤 다음에 실행할 Agent를 결정한다.
+Supervisor는 메일 의도를 단순 `if/else`로 바꾸는 역할에 그치지 않는다. 현재 분류, 신뢰도, 첨부, 이전 Worker 결과, 실패 observation을 함께 받아 다음 행동을 JSON으로 선택한다. 실행 직전에는 코드 Policy Gate가 선택한 Worker와 메일 의도의 호환성을 다시 검사한다.
 
-* Email 관련 기능은 현재 mock 입력, 작성 가이드/메일 초안 생성, 승인 후 mock 또는 Gmail API 발송 Adapter까지 구현되어 있다. 실제 Gmail 수신함 검색, 메일 읽기, 첨부파일 수집은 후속 확장 범위로 분리하였다.
+일시적 네트워크 오류는 한 번 재시도할 수 있지만 Job 미확인, 첨부 유실, 손상 파일 같은 구조적 실패는 재시도하지 않고 사람 확인으로 전환한다. 이 구조 덕분에 동일 Worker를 사용하는 14개 통제 시나리오에서 Fixed Workflow 78.57%, Agentic Supervisor 100%의 성공률을 기록했다. 반면 중앙 처리 지연은 약 2.67초에서 5.84초로 증가했다. 즉, 추가 판단 비용을 감수하고 오류 종료 대신 안전한 복구를 선택한 설계다.
 
-* Requirement Analysis Agent는 취합 요청 메일에서 목적, 작성 항목, 제출 기한, 주의사항을 추출한다.
+#### 1.2 Gmail 수집과 화면 스케줄 연동
 
-* RAG Reference 기능은 내부 기준 문서가 필요한 경우를 대비해 인터페이스와 로컬 키워드 검색 수준으로 구현하였다. FAISS/Embedding 기반 운영 RAG는 후속 확장 범위이다.
+* 구현 위치: `backend/smart_collect/tools/inbox_tools.py`, `backend/smart_collect/scheduler.py`, `backend/smart_collect/inbox_pipeline.py`
 
-* Guide Draft Agent는 작성자용 작성 가이드와 메일 초안을 생성한다.
+| 기능 | 구현 내용 |
+| --- | --- |
+| 자동 확인 | UI에서 활성화, 실행 시각 목록, 타임존을 저장하면 APScheduler가 동일 설정으로 실행 |
+| 즉시 실행 | `/api/schedule/run-now`를 호출해 같은 처리 경로 즉시 실행 |
+| Gmail 읽기 | 제목, 본문, From/To/Cc, threadId, 첨부를 InboxMessage로 변환 |
+| 중복 방지 | Gmail message-id를 기준으로 이미 처리한 이벤트 제외 |
+| 첨부 수집 | Excel 첨부를 로컬 안전 경로에 다운로드해 Worker에 전달 |
+| 대화 유지 | 질문 자동답변 시 `threadId`, `In-Reply-To`, `References`를 사용해 같은 대화로 회신 |
 
-* Submission Tracking Agent는 제출자, 미제출자, 지연 제출자를 구분한다.
+백엔드 프로세스가 실행 중이어야 정기 확인이 동작한다. 저장된 스케줄은 `data/schedule_config.json`에 유지된다.
 
-* Excel Validation Agent는 제출된 엑셀 파일을 검증하고 병합한다.
+#### 1.3 메일 계층형 분류
 
-* Report Agent는 제출 현황, 오류 내역, 병합 결과를 최종 보고서 형태로 정리한다.
+* 구현 위치: `backend/smart_collect/tools/mail_classifier.py`
 
-**1.1-1 에이전트별 적용 기술**
+LLM은 다음 스키마로 결과를 반환한다.
 
-멘토 피드백을 반영하여 각 Agent가 어떤 기술을 사용했고, 그 기술을 어떤 방식으로 적용했는지 역할별로 정리한다. 1차 PoC에서 실제 구현된 범위와 후속 확장 범위를 구분하여 작성하였다.
+```json
+{
+  "category": "general | collection | spam",
+  "intent": "request | submission | question | correction | extension | other",
+  "confidence": 0.0,
+  "risk_flags": [],
+  "reason": "판단 근거"
+}
+```
 
-| Agent | 담당 역할 | 사용 기술 | 적용 방식 |
-| --- | --- | --- | --- |
-| Supervisor Agent | 전체 흐름 제어, 다음 단계 선택, 검증 규칙 계획 | LangGraph StateGraph, AgentState, Supervisor Routing, Tree of Thoughts | `AgentState`의 현재 상태를 기준으로 Requirement Analysis -> Planning -> Excel Validation -> Self-Correction -> Merge -> Error Report -> Report 흐름을 제어한다. 검증 규칙은 Strict/Balanced/Loose 후보를 생성한 뒤 실제 업로드 컬럼과 비교하여 선택한다. |
-| Requirement Analysis Agent | 취합 요청 메일 분석, 작성 항목/마감/주의사항 추출 | Azure OpenAI, 휴리스틱 폴백, Pydantic 구조화 모델, JSON Output Parsing | 메일 제목과 본문에서 `request_title`, `deadline`, `required_fields`, `cautions`, `missing_info`를 추출한다. Azure 키가 없거나 호출 실패 시 휴리스틱 분석으로 폴백하여 기본 PoC가 계속 동작한다. |
-| Excel Validation Agent | 제출 엑셀 검증, 정상 데이터 병합, 오류 보고서 생성 | pandas, openpyxl, 결정론적 검증 규칙 | 필수값 누락, 날짜 형식 오류, 허용되지 않은 코드값, 중복 데이터를 규칙 기반으로 검증한다. 정상 행만 병합 파일로 저장하고, 오류 행은 별도 오류 보고서로 생성한다. |
-| Self-Correction Agent | 안전한 오류 자동 교정 및 재검증 | Self-Refine/Self-Correction 패턴, 날짜 정규화, 코드값 매핑, 재검증 루프 | 날짜 형식과 코드값처럼 원본 의미가 보존되는 오류만 자동 교정한다. 교정 후 재검증하여 오류 수가 줄어든 경우만 채택하고, 필수값 누락/중복은 재제출 대상으로 남긴다. |
-| Report Agent | 최종 결과 요약, 다음 조치 정리 | Pydantic 결과 객체, 템플릿 기반 리포트 생성, Console/File Log | 파일 수, 전체 행 수, 정상 행 수, 오류 유형, 생성 파일, 다음 조치를 관리자용 요약으로 정리한다. 실행 흐름은 `agent_handoff_history`와 `reasoning_log`로 확인할 수 있게 한다. |
-| Guide Draft Agent | 작성자용 가이드와 요청 메일 초안 생성 | 요구사항 분석 결과, 템플릿 기반 문장 생성, FastAPI `/api/guide` | 추출된 작성 항목과 제출 기한을 바탕으로 작성 가이드와 요청 메일 초안을 생성한다. 실제 발송 전에는 사용자 승인 단계를 거치도록 분리하였다. |
-| Submission Tracking Agent | 제출자/미제출자/지연 제출자 분류 | 규칙 기반 문자열 매칭, 샘플 작성자 목록, mock 제출 데이터 | 샘플 작성자 목록과 제출 파일명 또는 제출 식별자를 비교하여 제출 상태를 계산한다. 실제 Gmail 회신 메일 기반 추적은 후속 확장 범위이다. |
-| Email Agent | 메일 초안 발송 Adapter 관리 | MockEmailAdapter, GmailApiEmailAdapter, Human-in-the-loop 승인 구조 | 기본값은 실제 발송 없는 mock 모드이다. `EMAIL_SEND_MODE=gmail`과 OAuth credentials가 설정된 경우에만 Gmail API로 발송한다. Gmail 수신함 검색/첨부 수집은 후속 Adapter 확장 범위이다. |
-| RAG Reference Agent | 기준 문서 검색 인터페이스 제공 | 로컬 키워드 검색, `retrieve_reference_documents`, confidence score | 1차 PoC에서는 핵심 실행 경로에 필수로 넣지 않고, 작성 기준이 불명확한 경우 호출 가능한 검색 Tool로 분리하였다. FAISS/Embedding 기반 Vector Search는 후속 확장 범위이다. |
+상위 분류는 사용자가 이해하기 쉬운 세 종류로 제한하고, 실제 행동이 필요한 취합 업무만 다섯 의도로 세분화하였다. 자유문장 메일의 우회 표현을 처리하기 위해 Azure OpenAI Structured Output을 사용하며, 장애 시에는 휴리스틱 폴백과 그 출처를 기록한다.
 
-* **동작 원리:** Supervisor Agent가 상태값을 기준으로 다음 Agent를 선택한다.
+24개 고정 평가셋에서 상위 분류와 세부 의도의 동시 일치율은 휴리스틱 45.83%, 실제 Azure LLM 100%였다. 이 결과가 분류 단계에 LLM을 사용한 정량적 근거다.
 
-  * 사용자가 취합 요청 분석을 실행하면 Supervisor Agent가 요청을 수신한다.
+#### 1.4 요구사항 추출과 양식 결정
 
-  * Supervisor Agent는 현재 상태값을 확인하여 Requirement Analysis, Planning, Excel Validation, Self-Correction, Merge, Error Report, Report 노드를 순차 실행한다.
+* 구현 위치: `backend/smart_collect/tools/requirement_tools.py`, `template_tools.py`, `mail_decision.py`
 
-  * 1차 PoC에서는 실제 Gmail 수신함을 검색하지 않고, 화면 또는 샘플 파일에서 입력된 취합 요청 메일 제목/본문을 분석한다.
+Requirement Analysis Agent는 메일에서 다음을 구조화한다.
 
-  * Requirement Analysis Agent는 메일 제목과 본문에서 요청 목적, 작성 항목, 제출 기한, 주의사항을 추출한다.
+* 취합 목적
+* 작성 항목
+* 제출 기한
+* 주의사항
+* 누락 정보
 
-  * Supervisor Agent는 분석 결과를 확인하여 내부 기준 문서가 필요한지 판단한다.
+Template Design Agent는 두 경로 중 하나를 선택한다.
 
-  * 단순히 메일 내용을 정리하는 수준이면 RAG를 호출하지 않는다.
+| 조건 | 처리 | 기본 운영 결정 |
+| --- | --- | --- |
+| 정해진 첨부 Excel이 있음 | 원본 양식 재사용 | 다른 안전 조건까지 만족하면 자동 처리 가능 |
+| 첨부 양식이 없음 | LLM이 TemplateSpec 설계 후 openpyxl로 생성 | 새 양식은 사람이 확인한 뒤 발송 |
 
-  * 작성 항목의 의미가 불명확하거나, 컬럼 입력 기준, 코드값, 날짜 형식, 기존 안내문 톤이 필요한 경우에만 RAG Reference Agent를 호출한다.
+TemplateSpec에는 컬럼명, 자료형, 필수 여부, 허용값, 날짜 형식, 예시, 중복 키가 포함된다. 하나의 스펙에서 배포용 Excel과 제출 검증 규칙을 함께 생성하므로 “보낸 양식”과 “검증 기준”이 달라지는 문제를 방지한다.
 
-  * 기준 문서가 필요한 경우를 대비해 `retrieve_reference_documents` 인터페이스를 제공하며, 현재 구현은 `docs/reference` 폴더의 로컬 키워드 검색이다.
+#### 1.5 수신자 결정과 자동발송
 
-  * Guide Draft Agent는 분석 결과와 참고 문서를 바탕으로 작성자용 가이드와 메일 초안을 생성한다.
+* 구현 위치: `backend/smart_collect/tools/directory_tools.py`, `mail_decision.py`, `email_tools.py`
 
-  * 메일 발송 전에는 Supervisor Agent가 사용자 승인 상태를 확인한다.
+수신자 결정 우선순위는 다음과 같다.
 
-  * 승인되지 않은 경우 Email Agent는 메일 발송을 수행하지 않는다.
+1. 메일 본문에 부서·대상자가 명시되면 조직도에서 해당 대상자를 조회한다.
+2. 대상자가 명시되지 않으면 최초 취합 요청 메일의 발신자와 참조자 전체를 기본 수신자로 사용한다.
+3. 사용자는 UI에서 추가 수신자를 수동으로 넣을 수 있다.
+4. 조직도 파일이 지정됐지만 읽지 못하거나 명시 부서를 찾지 못하면 샘플 대상자로 대체하지 않고 승인을 요청한다.
 
-  * 제출 이후 Submission Tracking Agent는 샘플 작성자 목록과 제출 식별자 또는 파일명을 기준으로 제출 현황을 확인한다.
+자동발송은 LLM 판단과 코드 정책을 함께 통과해야 한다.
 
-  * Excel Validation Agent는 제출된 엑셀 파일에 대해 필수값 누락, 날짜 형식 오류, 중복 데이터, 코드값 오류를 규칙 기반으로 검증한다.
+| 검사 | 차단 조건 |
+| --- | --- |
+| 분류 신뢰도 | 기준값 미만 |
+| 요구사항 | 마감·필수 항목·첨부 등 핵심 정보 누락 |
+| 수신자 | 주소 오류, 빈 목록, 허용 도메인 밖 |
+| 첨부 | 실제 재첨부 가능한 양식 파일 없음 |
+| 보안 | 스팸·피싱·프롬프트 인젝션 위험 |
+| RAG | 생성 내용의 근거 부족 또는 불일치 |
+| 운영 설정 | `AUTO_SEND_ENABLED=false` |
 
-  * 검증 통과 파일은 병합하고, 오류 데이터는 오류 보고서에 기록한다.
+개발 기본값은 `EMAIL_SEND_MODE=mock`, `AUTO_SEND_ENABLED=false`다. 실제 Gmail 발송은 테스트 계정과 허용 도메인 검증 후 활성화한다.
 
-  * Report Agent는 최종 제출 현황, 오류 내역, 병합 결과를 보고서로 생성한다.
+#### 1.6 작성 가이드 및 메일 생성
 
-* **주요 기술:** LangGraph Multi-Agent Supervisor, AgentState, Supervisor Routing, Agent Handoff, Azure OpenAI 폴백 구조, Structured Prompt, JSON Output Parsing, Console/File Log
+* 구현 위치: `backend/smart_collect/tools/guide_tools.py`, `rag_tools.py`, `advanced_rag.py`
 
-***
+Communication Agent는 추출된 요구사항과 양식 정보를 바탕으로 다음을 생성한다.
 
-**1.2 도구(Tool) 및 함수 연동**
+* `[SC-...]` Job ID가 포함된 제목
+* 작성 목적과 마감
+* 컬럼별 작성 방법과 허용값
+* 제출 방법
+* 첨부 양식
 
-* **구현 기능:** Excel Processing Tool, Guide/Submission Tool, Mock/Gmail 발송 Adapter, FastAPI 승인형 발송 API
+사용자가 저장한 과거 발송 메일이 있으면 스타일 RAG로 인사말, 문장 길이, 마무리 표현을 참고한다. 생성 후에는 Advanced RAG 검증이 마감, 필드, 첨부, 수신자 등 핵심 주장이 원본 요구사항과 맞는지 확인하고, grounding flag가 있으면 자동발송을 차단한다.
 
-  * PoC 단계에서는 사내 메일 시스템에 직접 연동하지 않고 mock 메일 입력과 파일 업로드로 핵심 취합 흐름을 검증하였다.
+#### 1.7 질문 자동응답
 
-  * 실제 업무 환경에서는 사내 메일 시스템을 사용해야 하지만, 개발 단계에서는 보안 정책과 접근 권한 문제로 사내 메일 서버 직접 연동이 제한된다.
+* 구현 위치: `backend/smart_collect/autonomous_graph.py`의 Q&A Worker
 
-  * 실제 발송이 필요한 경우를 대비해 Gmail API OAuth 기반 발송 Adapter를 분리했지만, 기본 실행 모드는 `EMAIL_SEND_MODE=mock`이다.
+작성자의 질문은 Gmail thread 또는 `[SC-...]` Job ID로 원래 취합 건과 연결한다. Q&A Agent는 저장된 다음 사실만 사용한다.
 
-  * 이 구조를 통해 향후 Gmail 수신함 검색, 사내 메일 MCP 또는 사내 메일 API로 교체할 수 있도록 설계하였다.
+* 제출 마감
+* 작성 항목
+* 필수 여부
+* 날짜·숫자 형식
+* 코드 허용값
+* 작성 가이드
 
-* **동작 원리:** 각 Agent는 자신의 역할에 맞는 Tool만 호출한다.
+LLM은 답변과 함께 사용한 근거 키를 반환한다. 질문자가 취합 대상자인지, thread/Job이 맞는지, 답변이 저장된 사실로 뒷받침되는지 코드가 확인한다. 기한 연장, 양식 변경, 예외 승인, 대리 제출처럼 정책을 바꾸는 질문은 자동답변하지 않고 사람 승인으로 보낸다.
 
-  * Email 관련 Tool은 현재 초안 생성과 승인 후 발송을 담당한다.
+#### 1.8 Excel 검증과 검증 규칙 후보 선택
+
+* 구현 위치: `backend/smart_collect/tools/excel_tools.py`, `tot_rules.py`
+
+Validation Agent는 다음 오류를 결정적 규칙으로 검사한다.
+
+* 필수 컬럼과 필수값 누락
+* 날짜 형식 오류
+* 숫자 형식 오류
+* 허용되지 않은 코드값
+* 지정 키 기준 중복
+
+Job에 배포한 TemplateSpec이 있으면 그 검증 계약을 그대로 사용한다. 레거시·외부 양식처럼 계약이 없으면 세 종류의 규칙 후보를 만들고 실제 파일 컬럼 coverage와 penalty를 계산해 가장 안전한 후보를 선택한다. 후보 탐색은 규칙을 임의로 늘리기 위한 것이 아니라, 존재하지 않는 컬럼을 필수로 강제하는 오탐을 줄이기 위한 장치다.
+
+8개 파일·130행·정답 오류 26건 비교에서 Direct LLM과 규칙 검증 모두 F1 1.0이었다. 평균 처리 시간은 LLM 3,933.7ms, 규칙 21.12ms로 규칙이 약 186배 빨랐다. 따라서 자연어 의미 판단에는 LLM, 셀 단위 검증에는 규칙 코드를 선택했다.
+
+#### 1.9 안전한 Self-Correction
+
+* 구현 위치: `backend/smart_collect/tools/self_correction.py`
+
+Self-Correction은 오류를 임의로 메우는 기능이 아니다. 다음 순서로 안전한 정규화만 시도한다.
 
 ```text
-create_request_mail
-send_email
+검증 오류
+  → LLM 또는 규칙이 날짜·코드값 교정 후보 제안
+  → 코드가 날짜 형식·허용값 검증
+  → 원본이 아닌 별도 메모리/파일에 적용
+  → 전체 규칙 재검증
+  → 오류 수 감소 시 채택 / 같거나 증가하면 원본 유지
 ```
 
-* Requirement Analysis Agent는 메일 분석 Tool을 호출한다.
+필수값 누락, 자유서술 내용, 업무 의미 판단이 필요한 값은 자동으로 채우지 않는다. 교정 전후 값, 방식, 제안 주체, 근거, 게이트 통과 여부를 로그에 남긴다.
 
-```text
-analyze_collection_email
-```
+#### 1.10 제출 추적, 반려, 리마인드 및 병합
 
-* RAG Reference Agent는 내부 문서 검색 Tool을 호출한다.
+* 구현 위치: `backend/smart_collect/job_store.py`, `deadline_agent.py`, `submission_tools.py`
 
-```text
-retrieve_reference_documents
-```
+제출 회신은 Job에 연결한 뒤 정상, 오류/재제출 대기, 완료 상태로 관리한다.
 
-* Guide Draft Agent는 작성 가이드와 메일 초안 생성 Tool을 호출한다.
+* 오류가 남으면 검증 결과의 파일·행·컬럼·입력값·허용 기준을 근거로 반려 메일을 작성한다.
+* 정상 제출은 제출자 목록에 등록한다.
+* 마감 임박 시 `전체 수신자 - 정상 제출자`로 미제출자를 계산한다.
+* 모든 대상자가 정상 제출하면 유효 행을 최종 Excel로 병합한다.
+* 원본 제출 파일과 자동 교정 전 원본은 변경하지 않는다.
 
-```text
-generate_writing_guide
-create_request_mail
-```
+#### 1.11 최종 통합 검증 및 최초 요청자 회신
 
-* Submission Tracking Agent는 제출 현황 확인 Tool을 호출한다.
+작성 요청 수신자와 최초 요청자·참조자를 Collection Job에 분리 저장한다. 예상 작성자 전원의 정상 제출이 확인되면 Final Validation Agent가 전체 파일을 다시 검사해 파일 간 중복까지 확인한다.
 
-```text
-track_submission_status
-generate_reminder_message
-```
+* 예상 작성자가 아닌 제출자는 완료 인원에 포함하지 않고 사람 확인으로 전환한다.
+* 최종 오류가 있으면 병합·완료·팀장님 회신을 차단하고 해당 파일 제출자를 재작성 대상으로 변경한다.
+* 최종 오류가 0건이면 병합본을 생성한다.
+* Completion/Report Agent가 작성 대상 수, 정상 제출 수, 병합 행 수, 오류 0건을 근거로 완료 메일을 작성한다.
+* 병합본을 첨부하고 최초 요청 메일의 발신자는 To, 원본 참조자는 Cc로 유지해 같은 Gmail thread에 회신한다.
+* 자동발송 정책을 통과하지 못하면 승인 큐에서 제목·본문·수신자를 직접 수정한 뒤 발송한다.
 
-* Excel Validation Agent는 엑셀 검증 및 병합 Tool을 호출한다.
+#### 1.12 기준 Excel 공통 값 일괄 업데이트
 
-```text
-validate_excel_data
-merge_excel_files
-update_common_fields
-```
+* 구현 위치: `backend/smart_collect/tools/excel_tools.py`의 `sync_common_fields_from_reference()`
+* API: `/api/sync-common-fields`
 
-* Report Agent는 결과 보고서 생성 Tool을 호출한다.
+하나의 기준 Excel과 여러 대상 Excel에서 같은 키를 찾고, 지정한 공통 컬럼의 값을 대상 파일 전체에 반영한다. 업데이트 건수와 미일치 키를 반환하며 결과 파일은 원본과 별도로 생성한다. 이 기능은 초기 프로젝트의 핵심 Excel 자동화 기능을 최종 메일 기반 Agent에도 유지한 것이다.
 
-```text
-generate_result_report
-```
+#### 1.13 상태 저장과 관찰 가능성
 
-* Supervisor Agent는 Agent 라우팅, 사용자 승인, 실행 추적을 담당한다.
+* 구현 위치: `backend/smart_collect/job_store.py`, `observability.py`, `llm.py`
 
-```text
-route_task_by_supervisor
-request_human_approval
-trace_with_langfuse
-```
+SQLite에는 Collection Job, Submission, Inbox record, Agent Action Log를 저장한다. Langfuse가 활성화되면 메일 이벤트 하나를 Trace로 열고, 그 안에 Supervisor와 Worker의 각 LLM 호출을 Generation으로 기록한다.
 
-* 메일 발송은 반드시 사용자 승인 후에만 실행된다.
+| 기록 항목 | 활용 목적 |
+| --- | --- |
+| prompt/messages, response | 판단 근거와 출력 품질 분석 |
+| model, token usage | 모델·비용 관리 |
+| latency | 병목 구간 확인 |
+| error/status | LLM 장애와 폴백 분석 |
+| event_id/job_id | 메일·업무 단위 전체 실행 연결 |
+| Agent action/observation | Tool 실행과 재계획 증명 |
 
-* 승인 전 상태에서는 `send_approved_email`이 호출되지 않도록 Supervisor Agent가 `approval_status`를 확인한다.
+Langfuse가 꺼져 있거나 기록에 실패해도 실제 취합 업무는 중단되지 않는다.
 
-* 엑셀 검증과 병합은 LLM 판단에 맡기지 않고 pandas와 openpyxl 기반 규칙 로직으로 처리한다.
+#### 1.14 FastAPI와 React UI
 
-* 실행 추적은 Console/File Log와 `agent_handoff_history`, `reasoning_log`로 확인한다. 이후 Langfuse(v2)를 실제 연동하여 `USE_LANGFUSE=true`일 때 전 노드 실행이 Langfuse 대시보드로 전송된다.
+* Backend: `backend/api.py`
+* Frontend: `frontend/`
 
-* **주요 기술:** Email Adapter Pattern, Mock Adapter, Gmail API 발송 Adapter, Python, FastAPI, Pydantic, pandas, openpyxl, Custom Tool Definition, Human-in-the-loop Approval
+주요 화면 기능은 다음과 같다.
 
-***
+* 자동 확인 활성화, 시각, 타임존 저장
+* `메일 확인` 즉시 실행
+* 일반·자동 처리·승인 필요·격리 큐 확인
+* 승인 전 수신자 추가·삭제·교체와 제목·본문 수정·발송
+* 최종 취합본과 팀장님 회신 초안 확인·다운로드·발송
+* Collection Job과 Agent Action Log 확인
+* 신규 양식 생성 및 다운로드
+* 제출 검증·병합·오류 보고서 다운로드
+* 기준 Excel 공통 값 일괄 업데이트
+* 과거 발송 스타일 메일 저장·업로드
 
-**1.3 데이터 및 메모리 (RAG & Context)**
-
-* **구현 기능:** 내부 기준 문서 기반 제한적 RAG 검색 구조
-
-  * RAG는 전체 기능에 무조건 적용하지 않고, 내부 기준 문서가 필요한 단계에서만 사용한다.
-
-  * 단순 취합 요청 메일 분석, 제출 현황 계산, 엑셀 검증, 엑셀 병합에는 RAG를 사용하지 않는다.
-
-  * 작성 기준이 불명확하거나, 컬럼 입력 규칙, 코드값 기준, 날짜 형식, 기존 작성 가이드 예시가 필요한 경우에만 RAG Reference Agent를 호출한다.
-
-* **동작 원리:** 1차 PoC에서는 RAG를 핵심 실행 경로에 넣지 않고, 기준 검색이 필요한 경우 호출 가능한 Tool 인터페이스로 분리하였다.
-
-  * Requirement Analysis Agent가 메일을 분석한 뒤, Supervisor Agent는 다음 기준으로 RAG 호출 여부를 판단한다.
-
-```text
-작성 항목의 의미가 불명확한가?
-컬럼별 입력 기준이 필요한가?
-코드값 또는 날짜 형식 기준이 필요한가?
-기존 작성 가이드 예시가 필요한가?
-보고서 문장 형식 참고가 필요한가?
-```
-
-* 위 조건에 해당하지 않으면 RAG를 호출하지 않고 Guide Draft Agent가 메일 분석 결과만으로 작성 가이드를 생성한다.
-
-* 현재 RAG Reference Tool은 다음 위치의 로컬 문서를 키워드 기반으로 검색한다.
-
-```text
-docs/reference/
-```
-
-* 검색 결과는 `retrieved_docs`, `source_info`, `confidence_score`를 포함하여 반환한다.
-
-* 검색 결과 신뢰도가 낮은 경우 운영 단계에서는 Human Review로 연결하도록 확장할 수 있다.
-
-* **주요 기술:** 로컬 키워드 검색, RAG Reference Tool 인터페이스, Structured Context Injection 설계. FAISS, Azure OpenAI Embedding, Vector Search, Metadata Filtering은 후속 확장 범위이다.
-
-***
 
 ### 주요 문제 해결 및 기술 리서치
 
-구현 과정에서 마주친 기술적 문제와 이를 해결하기 위해 **찾아본 자료(리서치)** 및 **적용한 방법**을 기록합니다.
+| 이슈 | 문제 원인 | 검토한 대안 | 최종 해결 |
+| --- | --- | --- | --- |
+| LangGraph를 썼지만 고정 흐름처럼 보임 | 항상 같은 순서로 노드를 실행 | 단순 Python chain, 고정 LLM workflow | Supervisor가 capability 선택, Worker observation을 받아 재계획하는 Graph 구현 |
+| LLM 분류 필요성이 불명확 | 키워드 규칙도 빠르고 간단함 | 휴리스틱 단독 | 우회 표현 24건 비교 후 exact match 45.83% vs 100% 근거로 LLM 선택 |
+| LLM이 Excel까지 검증하면 느리고 위험 | 셀 단위 사실 판정에 생성형 모델 사용 | Direct LLM validation | 130행 비교 후 동일 F1, 약 186배 빠른 규칙 검증 선택 |
+| 자동발송 오발송 위험 | LLM의 confidence만으로 외부 행동 결정 | 항상 수동 승인 | LLM 판단+수신자·도메인·첨부·근거·위험 코드 Gate의 혼합 방식 |
+| 짧은 회신이 일반 메일로 분류됨 | “네, 수정했습니다”에 취합 키워드가 없음 | 본문 키워드 추가 | Gmail thread와 활성 Job이 정확히 연결될 때만 문맥 보강 |
+| 질문 답변 환각 위험 | LLM이 업무 규칙을 추측할 수 있음 | 자유 답변 | Job 사실 검색, 근거 키 기록, 정책 변경 질문 승인 전환 |
+| 자동 교정으로 원본 훼손 가능 | 수정 후보가 업무 의미를 바꿀 수 있음 | 모든 오류 자동 수정 | 날짜·코드값만 허용, 코드 게이트, 재검증, 개선 시에만 별도 파일 채택 |
+| Worker 실패 시 전체 작업 중단 | 고정 Workflow는 예외 후 다음 행동 없음 | 무제한 retry | transient 1회 retry, 구조 실패·재실패는 Human Review |
+| LLM 사용 증거 부족 | 최종 결과만 있고 호출 단위 정보 없음 | 파일 로그만 사용 | 이벤트 Trace + 호출별 Langfuse Generation 계측 |
 
-| **이슈 구분**                 | **문제 상황 및 원인**                                                                                                                                                                | **리서치 및 해결 과정 (Reference & Solution)**                                                                                                                                                                                                                                                                                               |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **멀티 에이전트 구조 설계**         | 엑셀 취합 업무는 메일 검색, 요청 분석, 기준 확인, 안내문 작성, 제출 추적, 엑셀 검증, 결과 보고처럼 성격이 다른 작업들이 순차적으로 연결된다. 각 단계에서 사용하는 도구와 판단 기준이 다르기 때문에 Agent별 책임을 분리할 필요가 있었다.                                   | **리서치:** LangGraph의 Supervisor 기반 Multi-Agent 구조와 Agent Handoff 방식을 검토하였다. **적용:** Supervisor Agent가 전체 흐름과 상태를 관리하고, Email Agent, Requirement Analysis Agent, RAG Reference Agent, Guide Draft Agent, Submission Tracking Agent, Excel Validation Agent, Report Agent가 역할별로 작업을 수행하도록 분리하였다. 각 Agent는 자신의 역할에 맞는 Tool만 사용하도록 설계하였다. |
-| **Supervisor Routing 기준** | 멀티 에이전트 구조에서는 어떤 Agent를 언제 호출할 것인지가 명확해야 한다. 라우팅 기준이 없으면 Agent 선택이 프롬프트 응답에만 의존하게 되고, 동일한 업무에서도 실행 흐름이 달라질 수 있다.                                                              | **리서치:** LangGraph State 기반 라우팅과 조건 분기 방식을 검토하였다. **적용:** `route_task_by_supervisor` 함수를 설계하여 현재 상태값을 기준으로 다음 Agent를 결정하도록 하였다. 예를 들어 `gmail_message_id`가 없으면 Email Agent, `extracted_requirements`가 없으면 Requirement Analysis Agent, `approval_status=false`이면 Human Approval 단계로 이동하도록 조건을 분리하였다.                                   |
-| **사내 메일 연동 제약**           | 실제 운영 환경에서는 사내 메일 시스템을 연동해야 하지만, PoC 개발 단계에서는 보안 정책과 접근 권한 문제로 사내 메일 서버에 직접 접근하기 어렵다. 또한 실제 업무 메일 원문과 첨부파일을 개발 환경에서 사용하는 것은 보안상 제한이 있다.                                       | **리서치:** 사내 메일 직접 연동 전 단계에서 동일한 업무 흐름을 검증할 수 있는 Adapter 방식을 검토하였다. **적용:** PoC에서는 mock 메일 입력과 파일 업로드로 취합 흐름을 검증하고, 승인 후 발송은 `MockEmailAdapter`와 `GmailApiEmailAdapter`로 분리하였다. Gmail 수신함 검색/읽기/첨부 수집은 후속 Adapter 확장 범위로 남겼다.                                                                                  |
-| **메일 발송 승인 통제**           | 메일 발송은 실제 수신자에게 영향을 주는 작업이다. Agent가 메일 초안 생성과 실제 발송을 같은 흐름에서 자동 처리하면 오발송이 발생할 수 있다.                                                                                           | **리서치:** Human-in-the-loop 승인 구조를 검토하였다. **적용:** Email Agent는 메일 초안까지만 생성하고, Supervisor Agent가 `approval_status`를 확인한 뒤 승인된 경우에만 `send_approved_email`을 호출하도록 분리하였다. 승인 전 상태에서는 발송 Node로 이동하지 않도록 LangGraph 분기 조건을 추가하였다.                                                                                                            |
-| **RAG 적용 범위 조정**          | 단순 취합 요청 메일을 분석하고 작성자용 안내문을 생성하는 기본 흐름에는 RAG가 필수는 아니다. 모든 단계에 RAG를 적용하면 불필요한 검색 비용이 발생하고, 엑셀 검증처럼 규칙 기반 처리가 필요한 기능까지 LLM 판단에 의존하게 된다.                                         | **리서치:** RAG가 필요한 상황과 필요하지 않은 상황을 기능별로 분리하였다. **적용:** RAG는 작성 항목의 의미가 불명확하거나, 컬럼 입력 규칙, 코드값 기준, 날짜 형식 기준, 기존 안내문 톤이 필요한 경우에만 호출한다. 단순 메일 요약, 제출 현황 계산, 엑셀 검증, 엑셀 병합에는 RAG를 사용하지 않는다.                                                                                                                                                 |
-| **RAG 검색 품질 기준**          | RAG를 적용하더라도 검색된 문서가 실제 업무 기준과 관련이 낮으면 잘못된 안내문이 생성될 수 있다. 따라서 검색 결과의 신뢰도를 판단할 기준이 필요했다.                                                                                        | **리서치:** Vector 검색 결과의 score와 문서 유형 metadata를 함께 활용하는 방식을 검토하였다. **적용:** 현재 PoC는 `docs/reference` 키워드 검색과 `confidence_score` 반환까지만 구현하고, FAISS/Embedding/문서 metadata 필터링은 운영 확장 과제로 분리하였다.                                                                                |
-| **엑셀 검증 정확도**             | 엑셀 데이터 검증은 동일한 입력에 대해 항상 동일한 결과가 나와야 한다. 필수값 누락, 날짜 형식 오류, 중복 데이터 같은 항목은 자연어 판단보다 명확한 규칙 기반 검증이 적합하다.                                                                         | **리서치:** pandas와 openpyxl 기반 엑셀 데이터 처리 방식을 검토하였다. **적용:** Excel Validation Agent는 LLM이 아니라 규칙 기반 로직으로 검증을 수행한다. 필수값 누락, 날짜 형식 오류, 코드값 오류, 중복 데이터를 각각 함수로 분리하고, 검증 결과는 오류 보고서로 생성한다. 원본 파일은 수정하지 않고 결과 파일만 별도로 저장한다.                                                                                                                  |
-| **Agent 상태 관리**           | 취합 업무는 이전 단계의 결과가 다음 단계의 입력으로 사용된다. 예를 들어 메일 분석 결과는 작성 가이드 생성에 사용되고, 승인 상태는 메일 발송 여부를 결정하며, 검증 결과는 보고서 생성에 사용된다.                                                              | **리서치:** LangGraph의 State 기반 Workflow 설계를 검토하였다. **적용:** `AgentState`에 `request_id`, `gmail_message_id`, `extracted_requirements`, `reference_documents`, `approval_status`, `submission_status`, `validation_result`, `current_agent`, `langfuse_trace_id`를 저장하도록 설계하였다. Supervisor Agent는 이 상태값을 기준으로 다음 Agent를 선택한다.              |
-| **출력 데이터 구조화**            | 메일 분석 결과나 엑셀 검증 결과가 자유 텍스트로만 반환되면 프론트엔드 표시, 후속 Agent 입력, 보고서 생성에 재사용하기 어렵다.                                                                                                   | **리서치:** Pydantic 모델과 JSON Output Parsing 방식을 검토하였다. **적용:** 메일 분석 결과, RAG 검색 결과, 제출 현황, 엑셀 검증 결과를 JSON 구조로 반환하도록 설계하였다. 예를 들어 `required_fields`, `deadline`, `missing_info`, `error_rows`, `duplicate_rows`, `submission_rate` 같은 필드를 고정하여 후속 단계에서 재사용할 수 있게 하였다.                                                                   |
-| **모니터링 및 디버깅**            | 멀티 에이전트 구조에서는 Supervisor Agent가 어떤 기준으로 다음 Agent를 선택했는지, 각 Agent가 어떤 입력과 출력으로 실행되었는지 확인할 수 있어야 한다. | **리서치:** Langfuse 기반 LLM Observability와 Trace 관리 방식을 검토하였다. **적용:** Console/File Log, `agent_handoff_history`, `reasoning_log`로 실행 흐름을 확인하고, 추가로 Langfuse(v2)를 실제 연동하여 `USE_LANGFUSE=true`일 때 전 노드의 `trace_execution`이 실행 순서·입출력 요약을 Langfuse 대시보드로 전송한다. (코드가 v2 API를 사용하므로 `langfuse<3`으로 고정)                                   |
-| **보안 및 민감정보 처리**          | 메일 본문, 첨부파일, 작성자 이메일, 엑셀 데이터에는 업무상 민감 정보가 포함될 수 있다. 전체 원문을 로그에 그대로 남기면 보안상 문제가 된다.                                                                                     | **리서치:** 로그 최소화와 민감정보 마스킹 기준을 검토하였다. **적용:** 현재 PoC의 Console/File Log에는 원문 전체가 아니라 request_id, 실행 단계, 오류 수, 요약 정보 중심으로 기록한다. 이메일 주소, 이름, 첨부파일 원문 데이터는 필요한 범위에서만 사용하고 운영 Trace 연동은 후속 확장 시 마스킹 정책과 함께 적용한다.                                                                                                                              |
-
-***
 
 ### 핵심 동작 검증
 
-위에서 구현한 기능이 의도대로 동작하는지 확인하기 위해 대표 시나리오를 기준으로 검증하였다.
+#### 검증 시나리오
 
-**[검증 시나리오: 샘플 취합 요청 메일 분석 후 작성 가이드 생성 및 엑셀 검증]**
+14개 E2E 시나리오를 실제 임시 SQLite DB, 실제 Excel 파일, 실제 Worker 코드 경로로 실행했다.
 
-* **입력:**\
-  "2026년 6월 시스템 개선 요청사항 취합 메일 본문을 분석해서 작성자용 가이드를 만들고, 업로드된 엑셀 파일을 검증해줘."
+1. 일반 메일
+2. 스팸 메일
+3. 첨부 양식 취합 요청
+4. 신규 양식 취합 요청
+5. 정상 제출
+6. 오류 제출
+7. 작성 질문
+8. 연장 요청
+9. Job 없는 제출
+10. 첨부 유실
+11. 손상 Excel
+12. 수정본
+13. 프롬프트 인젝션
+14. 마감 리마인드
 
-* **에이전트 동작:**
+#### 검증 결과
 
-  1. Supervisor Agent가 사용자 요청을 분석한다.\
-     → 현재 작업을 `취합 요청 메일 분석 및 제출 파일 검증` 업무로 분류한다.
+| 항목 | 결과 |
+| --- | --- |
+| 백엔드 회귀 테스트 | 148 passed, 경고 1건 |
+| 프론트 production build | 성공 |
+| 휴리스틱 메일 category+intent exact match | 45.83%, 24건 |
+| Azure LLM exact match | 100%, 24/24 실제 응답 |
+| Fixed LLM Workflow E2E 성공률 | 78.57%, 14건 |
+| Agentic Supervisor E2E 성공률 | 100%, 14건 |
+| 구조 실패 복구 | Fixed 0% → Agentic 100%, n=3 |
+| E2E 중앙 처리 지연 | Fixed 2,669.13ms → Agentic 5,837.94ms |
+| Agentic 자율 해결률 | 71.43%; 나머지 4건은 의도된 사람 확인 |
+| Excel 규칙 검증 | F1 1.0, 평균 21.12ms |
+| Direct LLM 검증 | F1 1.0, 평균 3,933.7ms |
 
-  2. 사용자가 화면 또는 샘플 파일에서 메일 제목/본문과 엑셀 파일을 입력한다.\
-     → 결과: 요청 메일 텍스트와 제출 파일 목록 확보
+100%는 프로젝트 내부 통제 평가셋 결과이며 운영 환경의 무오류를 뜻하지 않는다. E2E 벤치마크는 mock 발송·자동발송 OFF로 실행했기 때문에 `unsafe_decisions=0`도 실제 Gmail 사고율이 아니라 잘못된 허용 판단이 없었다는 뜻이다.
 
-  3. Supervisor Agent가 Requirement Analysis Agent를 호출한다.\
-     → `analyze_collection_email()` 실행\
-     → 결과: 요청 목적, 작성 항목, 제출 기한 추출
 
-  4. Supervisor Agent가 ToT 기반 검증 규칙 후보를 생성한다.\
-     → Strict/Balanced/Loose 후보 비교\
-     → 결과: 실제 업로드 컬럼과 가장 잘 맞는 규칙 선택
+### 1.4 추가 구현 및 최종 고도화
 
-  5. Guide Draft Tool이 작성자용 가이드와 메일 초안을 생성한다.\
-     → 실제 발송 전에는 사용자 승인 필요
+초기 PoC 이후 다음 기능을 추가해 실제 취합 담당자의 업무 흐름으로 확장했다.
 
-  6. Submission Tracking Tool이 샘플 작성자 목록과 제출 식별자를 대조한다.\
-     → 결과: 제출자, 미제출자, 지연 제출자 분류
+* Gmail 상시 수집과 UI 스케줄 연동
+* 일반·취합·스팸 및 5개 취합 의도 분류
+* Supervisor 자율 라우팅과 Observation Loop
+* 첨부 양식 재사용·신규 양식 생성 및 검증 계약 라운드트립
+* 원본 발신자+참조자 기본 수신자와 수동 추가
+* 안전 정책을 통과한 Gmail 자동발송
+* 과거 발송 스타일 RAG와 생성 초안 grounding 검증
+* 작성자 질문의 동일 thread 자동답변
+* 제출 검증, 사실 기반 반려, 수정본 재검증
+* 제한적 Self-Correction과 결정적 재검증
+* 제출자 등록, 미제출자 리마인드, 전원 완료 병합
+* 전체 파일 최종 교차 검증과 최초 요청자 완료 회신
+* 기준 Excel 기반 공통 값 일괄 업데이트
+* SQLite Agent Action Log와 Langfuse 호출 단위 추적
+* Rule/Fixed/Agentic, Heuristic/LLM, LLM/Rule 검증 비교 벤치마크
 
-  7. Supervisor Agent가 Excel Validation Agent를 호출한다.\
-      → `validate_excel_data()` 실행\
-      → 결과: 필수값 누락 2건, 날짜 형식 오류 1건, 중복 데이터 1건 탐지
-
-  8. Self-Correction Agent가 안전한 오류만 자동 교정한다.\
-      → 날짜 형식/코드값 정규화 후 재검증\
-      → 결과: 개선된 경우만 채택
-
-  9. Excel Validation Agent가 정상 데이터를 병합한다.\
-      → `merge_excel_files()` 실행\
-      → 결과: 최종 병합 파일 생성
-
-  10. Supervisor Agent가 Report Agent를 호출한다.\
-      → `generate_result_report()` 실행\
-      → 결과: 제출 현황, 오류 내역, 병합 결과 보고서 생성
-
-  11. 실행 로그가 기록된다.\
-      → Supervisor Routing, Agent Handoff, ToT 선택, Self-Correction, Excel 검증 결과 기록
-
-* **최종 결과:**
-
-```text
-요약:
-2026년 6월 시스템 개선 요청사항 취합 메일을 분석하고 작성자용 작성 가이드를 생성했습니다.
-
-상세 결과:
-- 제출 기한: 2026-06-12 17:00
-- 작성 항목: 부서명, 담당자, 요청 시스템, 개선 요청 내용, 긴급도, 요청 사유
-- RAG 참고 문서: 1차 PoC에서는 핵심 경로에 미사용, 로컬 키워드 검색 Tool만 제공
-- 제출 현황: 샘플 작성자 4명 중 제출 3명, 미제출 1명
-- 엑셀 검증 결과: 필수값 누락 2건, 날짜 형식 오류 1건, 중복 데이터 1건
-- 생성 파일: 오류 보고서, 최종 병합 파일, 결과 보고서
-
-확인 필요 사항:
-- 미제출자 2명에게 리마인드 메일 발송 여부 확인 필요
-- 오류 데이터 4건에 대한 작성자 재제출 요청 여부 확인 필요
-
-다음 조치:
-1. 사용자가 메일 발송을 승인하면 mock 또는 Gmail API 발송 Adapter를 통해 초안을 발송할 수 있습니다.
-2. 오류 데이터 수정본이 제출되면 Excel Validation Agent가 재검증을 수행합니다.
-3. 모든 파일이 검증 완료되면 Report Agent가 최종 보고서를 갱신합니다.
-
-실행 추적 정보:
-- 현재 실행 구조: Multi-Agent Workflow
-- 실행 Agent: Supervisor Agent, Requirement Analysis Agent, Excel Validation Agent, Self-Correction Agent, Report Agent
-- 실행 로그: request_id, agent_handoff_history, reasoning_log
-```
-
-***
-
-### 1.4 추가 구현 (2차): 내 발송 스타일 RAG 및 메일 발송 확장
-
-최초 PoC 이후, Guide Draft Agent와 메일 발송 흐름을 실제 취합 담당자 관점으로 확장하였다.
-
-* **스타일 RAG (Guide Draft Agent 강화)**
-
-  * 담당자가 과거에 보낸 요청 메일을 업로드(.txt/.md/.eml)하거나 붙여넣어 저장하면 `docs/reference/style_samples/`에 스타일 코퍼스로 축적된다.
-  * 요청 메일 초안 생성 시 `retrieve_style_samples()`가 관련 과거 메일을 검색하여 `create_request_mail()` 프롬프트에 인사말·톤·구성 예시로 주입한다.
-  * 모델 재학습이 아니라 검색 주입(RAG) 방식이다. 반환값에 `style_used`, `style_sources`를 포함해 반영 여부를 UI에 표시한다.
-
-* **메일 발송 확장 (첨부 + 리마인드)**
-
-  * `POST /api/send-request-mail`로 요청/리마인드 메일을 발송하며, 요청과 함께 받은 양식 엑셀을 첨부(multipart)해 다중 수신자에게 보낸다. 기본 mock, `EMAIL_SEND_MODE=gmail` 시 실제 발송.
-  * 제출 현황 확인 결과의 미제출자 이메일이 리마인드 발송 폼에 자동 입력된다.
-
-* **신규 Tool / 엔드포인트**
-
-```text
-save_style_mail        과거 발송 메일 저장(POST /api/save-style-mail)
-upload_style_mails     메일 파일 업로드(POST /api/upload-style-mails)
-retrieve_style_samples 스타일 코퍼스 검색(Guide Draft Agent 내부)
-send_request_mail      요청/리마인드 발송, 첨부 지원(POST /api/send-request-mail)
-```
-
-* **Gmail 읽기 방식**: 앱이 직접 수신함을 읽지 않고, Claude Code의 Gmail MCP로 필요할 때만 팀장 포워딩 메일·과거 발송 메일을 가져와 워크플로우에 투입한다(Human-in-the-loop). 앱 백엔드의 수신함 자동 검색은 후속 확장이다.
+최종 PoC는 LLM을 많이 호출하는 것이 목표가 아니라, LLM이 필요한 판단에는 LLM을 사용하고 정확성·속도·안전이 중요한 실행에는 검증 가능한 Tool을 선택한 하이브리드 에이전트다.

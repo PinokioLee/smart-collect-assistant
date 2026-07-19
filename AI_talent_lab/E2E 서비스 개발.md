@@ -1,233 +1,280 @@
 E2E 서비스 개발
+최종 서비스 아키텍처, 구현 범위, 성과 및 운영 고려사항
+
 
 ## 1. 최종 아키텍처 요약
 
-* **완성된 아키텍처 핵심:** LangGraph 기반 Multi-Agent 상태 흐름과 pandas/openpyxl 기반 결정론적 엑셀 검증 파이프라인을 FastAPI + React UI로 연결한 E2E 취합 자동화 서비스이다.
+* **완성된 서비스:** Gmail에 들어온 메일을 정기 또는 즉시 확인하고, LLM이 업무 의미와 위험도를 판단한 뒤 여러 Worker Agent와 결정적 Tool을 조합해 취합 업무를 수행하는 이벤트 기반 멀티 에이전트다.
+* **핵심 설계:** LLM은 비정형 메일의 분류, 요구사항·양식 설계, 다음 행동 선택, 안내·반려·질문 답변을 담당한다. Excel 검증, 수신자·발송 정책, 교정 채택, 병합은 재현 가능한 코드가 담당한다.
+* **사용자 경험:** 사용자는 자동 확인을 켜두거나 `메일 확인`을 누른다. 시스템은 일반·자동 처리·승인 필요·격리를 구분하고, 단순 업무는 처리하며 위험하거나 불명확한 건만 사용자에게 확인을 요청한다.
+* **최종 산출물:** 신규 취합 양식, 작성 가이드, 요청/반려/질문 답변/리마인드 메일, 제출 현황, 교정본, 최종 병합 Excel, 최초 요청자 완료 회신, 오류 보고서, 기준값 동기화 파일, Agent 실행 로그.
 
-* **최종 산출물 형태:** 취합 담당자가 브라우저에서 요청 메일과 제출 엑셀 파일을 입력하면, 시스템이 메일 분석, 검증 규칙 생성, 엑셀 검증, Self-Correction, 정상 데이터 병합, 오류 보고서 다운로드까지 수행하는 로컬 웹 서비스이다.
-
-* **Agent 구조:** Supervisor Agent가 전체 흐름을 제어하고, Requirement Analysis Agent, Excel Validation Agent, Self-Correction Agent, Report Agent가 단계별로 역할을 분담한다. 1차 PoC에서는 실제 메일 수신함 연동은 제외하고, 이메일 발송은 `MockEmailAdapter`와 `GmailApiEmailAdapter`를 분리하여 시연 안전 모드와 실제 Gmail 발송 확장 가능성을 함께 검증하였다.
 
 ### 1-1. 최종 처리 흐름
 
 ```text
-React + TypeScript UI
-  - 샘플 메일 불러오기
-  - 제출 엑셀 업로드
-  - 검증/병합 실행
-  - 작성 가이드/메일 초안 생성
-  - 제출 현황 확인
-  - 공통 항목 일괄 수정
-  - 결과/다운로드 확인
-        ↓ /api
-FastAPI Backend
-  - /api/health
-  - /api/sample-email
-  - /api/gen-samples
-  - /api/collect
-  - /api/update-fields
-  - /api/guide
-  - /api/send-email
-  - /api/track
-  - /api/download
+Gmail / APScheduler / UI 지금 실행
         ↓
-LangGraph Multi-Agent Workflow
-  Requirement Analysis
-    ↓
-  Supervisor Planning + ToT Rule Selection
-    ↓
-  Excel Validation
-    ↓
-  Self-Correction
-    ↓
-  Merge + Error Report
-    ↓
-  Report
+Inbox Intake Agent
+일반 메일 · 취합 업무 · 스팸/위험
+요청 · 제출 · 질문 · 수정 · 연장
         ↓
-Local File Outputs
-  - data/merged_files
-  - data/error_reports
-  - data/updated_files
+LangGraph Supervisor Agent
+현재 상태 + 신뢰도 + 위험 + 이전 Worker observation
+        ↓
+Route/Intent Policy Gate
+        ↓
+┌──────────────────────────────────────────────────────────────┐
+│ Request Worker                                               │
+│ 요구 분석 → 첨부 양식 재사용/신규 양식 생성 → 안내 메일      │
+├──────────────────────────────────────────────────────────────┤
+│ Submission/Correction Worker                                 │
+│ Job 연결 → 규칙 검증 → 제한적 Self-Correction → 반려/병합    │
+├──────────────────────────────────────────────────────────────┤
+│ Q&A Worker                                                   │
+│ Gmail thread/Job 연결 → 사실 검색 → 자동답변/승인             │
+├──────────────────────────────────────────────────────────────┤
+│ Deadline Worker                                              │
+│ 미제출자 계산 → 리마인드 / 연장 요청 → 사람 승인              │
+├──────────────────────────────────────────────────────────────┤
+│ Security Agent                                               │
+│ 스팸·피싱·프롬프트 인젝션 → 격리                              │
+├──────────────────────────────────────────────────────────────┤
+│ Final Validation + Completion/Report Agent                   │
+│ 전원 제출 → 전체 교차 검증 → 병합 → 최초 요청자 완료 회신     │
+└──────────────────────────────────────────────────────────────┘
+        ↓
+External Action Policy Gate
+자동발송 또는 승인 대기
+        ↓
+Worker Observation
+성공 종료 / 일시 오류 1회 재시도 / 구조 실패·재실패 사람 확인
+        ↓
+SQLite Job·Submission·Action Log + Langfuse Trace/Generation
 ```
+
+고정 Workflow와의 가장 큰 차이는 실패를 끝 상태로 두지 않는다는 점이다. Worker 결과가 observation으로 Supervisor에 돌아가며, 일시 오류는 제한적으로 재시도하고 구조적 실패는 안전한 사람 확인 상태로 재계획한다.
+
 
 ### 1-2. 기술 스택 구성 및 활용 방식
 
-| 기술 스택 | 선택 이유 | 실제 사용 방식 및 구현 포인트 |
+| 기술 스택 | 실제 사용 방식 | 다른 대안과 비교한 선택 이유 |
 | --- | --- | --- |
-| React + TypeScript + Vite | 취합 담당자가 메일, 파일, 실행 옵션, 결과를 한 화면에서 확인해야 하므로 브라우저 UI가 필요했다. | 샘플 메일 불러오기, 엑셀 다중 업로드, LangGraph/LLM 옵션 선택, 결과 요약, 오류 상세, 병합 파일/오류 보고서 다운로드, 작성 가이드/메일 초안, 제출 추적, 공통항목 수정 화면을 제공한다. |
-| FastAPI | 파일 업로드, JSON 응답, 결과 파일 다운로드, mock/Gmail 발송 API를 간단하게 구성할 수 있고 React와 연결하기 쉽다. | `/api/collect`에서 메일과 엑셀 파일을 받아 검증/병합을 실행하고, `/api/guide`, `/api/send-email`, `/api/track`, `/api/update-fields`, `/api/download`로 부가 기능과 결과 파일 다운로드를 제공한다. |
-| LangGraph | 취합 업무는 메일 분석, 규칙 선택, 검증, 교정, 병합, 보고가 단계적으로 연결되고 각 단계 결과가 다음 단계 입력이 된다. | Requirement Analysis -> Supervisor Planning -> Excel Validation -> Self-Correction -> Merge -> Error Report -> Report 흐름을 노드로 분리하고, 실행 이력은 `agent_handoff_history`와 `reasoning_log`에 남긴다. |
-| Azure OpenAI | 취합 요청 메일의 목적, 작성 항목, 제출 기한, 주의사항처럼 자연어 구조화가 필요한 단계에 적합하다. | 메일 분석 단계에만 선택적으로 연결하였다. API 키가 없거나 호출이 실패하면 휴리스틱 분석으로 자동 폴백하며, 엑셀 검증과 병합에는 LLM을 사용하지 않아 결과 재현성을 유지한다. |
-| pandas | 엑셀 검증은 동일 입력에 동일 결과가 나와야 하며 행 번호, 컬럼명, 오류 유형이 정확해야 한다. | 제출 엑셀 파일을 DataFrame으로 읽고 필수값 누락, 날짜 형식 오류, 허용되지 않은 코드값, 중복 데이터 검증을 결정론적 함수로 분리하였다. |
-| openpyxl | 검증 결과와 병합 결과를 다시 엑셀 파일로 저장해야 한다. | 정상 행은 병합 파일로, 오류 행은 오류 보고서로, 공통항목 수정 결과는 `data/updated_files`에 별도 파일로 저장한다. 원본 파일은 수정하지 않는다. |
-| Tree of Thoughts | 메일에서 추출한 모든 항목을 필수 규칙으로 강제하면 실제 양식 변형 시 오탐이 발생할 수 있다. | Strict/Balanced/Loose 후보를 만들고 실제 업로드 컬럼과 coverage/penalty를 비교해 스키마 드리프트 상황에서 과잉 필수규칙 오탐 1건을 회피하였다. |
-| Self-Correction | 단순 오류 보고만 하면 작성자가 다시 수정해야 하는 부담이 남지만, 모든 오류를 자동 수정하면 데이터 추측 위험이 있다. | 날짜 형식과 코드값 매핑처럼 안전하게 정규화 가능한 오류만 자동 교정하고, 재검증 후 오류가 줄어든 경우만 채택한다. 필수값 누락과 중복은 작성자 확인 또는 재제출 대상으로 남긴다. |
-| Email Adapter | 메일 발송은 실제 수신자에게 영향을 주므로 시연 안전 모드와 실제 발송 모드를 분리해야 한다. | 기본값은 실제 발송 없는 `MockEmailAdapter`이며, `EMAIL_SEND_MODE=gmail`과 OAuth credentials가 설정된 경우에만 `GmailApiEmailAdapter`로 실제 발송을 수행한다. Gmail 수신함 검색과 첨부 수집은 후속 확장 범위이다. |
-| pytest / benchmark | 기능이 많아질수록 회귀 테스트와 정량 검증이 필요하다. | 검증/병합/ToT/Self-Correction/가이드/제출추적/API 테스트를 자동화하고, `backend.smart_collect.benchmark`로 F1, 재현성, 처리 속도, 자동 교정율을 측정한다. |
+| Azure OpenAI Structured Output | 메일 분류, Supervisor route, 요구사항·양식 설계, 안내·반려·Q&A 생성 | 키워드 휴리스틱 대비 24건 exact match 45.83% → 100%. 다양한 표현과 문맥 판단에 필요 |
+| LangGraph | Supervisor, Worker routing, observation loop, retry/handoff | 동일 Worker를 고정 호출한 방식 대비 14건 성공률 78.57% → 100%, 구조 실패 복구 0% → 100%. 중앙 지연은 2.67초 → 5.84초로 증가 |
+| Gmail API | 새 메일·첨부 읽기, From/Cc/thread 수집, 동일 thread 답장, 실제 발송 Adapter | 수동 업로드로는 상시 자동화와 대화 연결을 구현할 수 없음 |
+| APScheduler | UI에서 저장한 시각·타임존의 정기 확인과 즉시 실행 | OS별 스케줄러보다 애플리케이션 설정·상태와 통합하기 쉬움 |
+| pandas/openpyxl | Excel 로드, 검증, 양식 생성, 병합, 오류 보고서, 기준값 동기화 | Direct LLM과 F1은 1.0으로 같고 평균 21.12ms vs 3,933.7ms로 약 186배 빠름 |
+| SQLite | Collection Job, Submission, Inbox record, Agent Action Log | 로컬 E2E 범위에서 설치 없이 영속 상태와 재현 가능한 로그 제공 |
+| Langfuse | 메일 이벤트 Trace, LLM 호출별 prompt/response/token/latency/error Generation | 단순 파일 로그보다 LLM이 어느 판단에 사용됐는지 직접 확인 가능 |
+| FastAPI | Gmail/스케줄/Agent/Excel/다운로드 REST API | 파일 업로드와 구조화 응답, React 연결이 간결함 |
+| React + TypeScript + Vite | 메일 처리 큐, 승인, 스케줄, Agent Job, 실행 이력, Excel 도구 UI | CLI보다 비개발자가 자동 처리와 사람 확인 경계를 이해하기 쉬움 |
 
-### 1-3. 구현 범위와 후속 확장 구분
 
-| 구분 | 현재 구현 | 후속 확장 |
+### 1-3. 최종 구현 범위와 운영 전 확장 구분
+
+| 구분 | 현재 구현 | 운영 전 추가 필요 |
 | --- | --- | --- |
-| 메일 입력 | 샘플 메일 또는 사용자가 입력한 제목/본문 분석 | Gmail/사내메일 수신함 검색, 회신 메일 읽기, 첨부파일 자동 수집 |
-| 메일 발송 | 승인 후 mock 발송, Gmail API 발송 Adapter 구조 | 실제 운영 OAuth 설정, 사내 메일 API Adapter, 리마인드 자동 발송 정책 |
-| 제출 추적 | 샘플 작성자 목록과 파일명/식별자 기반 mock 추적 | Gmail 회신 메일, 업로드 이벤트, 사내 파일 저장소 기반 실시간 추적 |
-| RAG | 로컬 키워드 검색 Tool 인터페이스와 선택적 구조 | FAISS/Vector DB, Azure Embedding, 문서 권한 관리, 검색 품질 평가 |
-| 운영 보안 | 로컬 실행, 원본 보존, 로그 최소화 원칙 | SSO, 권한 검증, 개인정보 마스킹, 운영 감사 로그 |
+| 메일 수신 | Gmail API 새 메일·첨부 수집, message-id 중복 방지 | 회사 계정 OAuth 승인과 메일 보존 정책 검토 |
+| 스케줄 | UI 활성화·시각·타임존 저장, APScheduler, 지금 실행 | 이중화, 장애 알림, 서버 재기동 운영 절차 |
+| 메일 분류 | 일반·취합·스팸 + 요청·제출·질문·수정·연장 | 비식별 실제 사내 메일 블라인드 재평가 |
+| 취합 요청 | 요구 추출, 기존 양식 재사용, 신규 양식 생성 | 복잡한 다중 시트·매크로 양식 Parser 확대 |
+| 역할·수신자 | 작성자와 최초 요청자·참조자 분리 저장, 승인 화면에서 추가·삭제·교체 | 실제 조직도·권한 시스템 연동 |
+| 발송 | mock/Gmail Adapter, 정책 기반 자동발송·승인 | 테스트 계정과 제한 도메인 운영 리허설 |
+| 질문 | thread/Job 기반 단순 질문 자동답변 | 내부 규정 문서 권한별 RAG와 답변 품질 운영평가 |
+| 제출 | 검증, 제한적 교정, 반려, 수정본, 완료 등록 | 대용량·암호화·비표준 파일 처리 확대 |
+| 최종 완료 | 예상 작성자 집합 확인, 전체 교차 검증, 병합본을 최초 요청자 thread로 회신 | 결재·전자문서 완료 보고 연동 |
+| 마감 | 미제출자 계산, 리마인드, 연장 승인 | 휴일·조직별 알림 정책 연동 |
+| Excel | 검증·병합·오류 보고서·기준값 일괄 동기화 | 업무별 검증 계약 템플릿 확장 |
+| 관찰 | SQLite Action Log, Langfuse LLM trace | 민감정보 마스킹, 보존 기간, 접근 통제 |
+| 인증 | 로컬 사용자 기준 | SSO, RBAC, 감사 승인 |
 
-### 1-4. 2차 고도화 (현재 구현 기준 추가 사항)
 
-최초 E2E 구성 이후, 실제 취합 담당자 관점의 흐름에 맞춰 다음을 추가 구현하였다.
+### 1-4. 초기 PoC 이후 고도화 내역
 
-**(1) 내 발송 스타일 기반 요청 메일 작성 (스타일 RAG)**
+| 초기 상태 | 최종 고도화 |
+| --- | --- |
+| 사용자가 메일 내용을 화면에 입력 | Gmail 수신함 정기 확인과 즉시 실행 |
+| 취합 요청 한 종류만 처리 | 일반·취합·스팸 및 취합 5개 의도 분류 |
+| 고정된 순서로 분석→검증→병합 | Supervisor가 상황별 Worker 선택 |
+| Worker 실패 시 오류 종료 | Observation Loop, 일시 오류 재시도, 구조 실패 사람 확인 |
+| 양식이 주어진 파일만 검증 | 첨부 재사용 또는 자연어 기반 신규 양식 생성 |
+| 수신자 수동 입력 | 명시 대상자 또는 원본 From+Cc 기본값, 수동 추가 |
+| 승인 후 mock 발송 | 안전 정책을 통과한 Gmail 자동발송 가능 |
+| 작성자 질문은 사람이 답변 | thread/Job grounding 기반 단순 질문 자동응답 |
+| 오류 목록만 표시 | 사실 기반 반려 메일, 수정본 재검증 |
+| 모든 오류는 사람이 수정 | 날짜·코드값만 제한적 Self-Correction 후 재검증 |
+| 제출 파일 병합 중심 | 제출 추적·미제출 리마인드·완료 병합까지 연결 |
+| 병합 후 사용자가 직접 결과 보고 | Final Validation + Completion/Report Agent가 팀장님 완료 회신까지 연결 |
+| 공통값 수정 기능이 별도 | 기준 Excel 공통값 일괄 업데이트를 UI/API에 유지 |
+| 로컬 로그 중심 | SQLite Action Log + Langfuse 호출 단위 추적 |
+| 효과 설명이 추정 중심 | 24건·14건·130행 실제 코드 벤치마크 제공 |
 
-- 담당자가 과거에 보낸 요청 메일을 업로드(.txt/.md/.eml) 또는 붙여넣기로 저장하면 `docs/reference/style_samples/`에 스타일 코퍼스로 축적된다.
-- 요청 메일 초안 생성 시 `retrieve_style_samples()`가 관련 과거 메일을 검색해 `create_request_mail()` 프롬프트에 톤·구성 예시로 주입한다. 결과 초안에 "내 발송 스타일 반영됨"이 표시된다.
-- 모델 재학습이 아니라 검색 주입(RAG) 방식이며, 엑셀 검증에는 사용하지 않는다.
-
-**(2) Gmail 연동 방식 (MCP-assisted read + 발송 분리)**
-
-- 메일 읽기는 앱이 아니라 Claude Code의 Gmail MCP로 필요할 때만 수행한다(팀장 포워딩 메일, 과거 발송 메일 수집). 앱 백엔드의 수신함 자동 검색은 후속 확장이다.
-- 요청/리마인드 메일 발송은 `POST /api/send-request-mail`로 처리하며, 요청과 함께 받은 양식 엑셀을 첨부(multipart)해 다중 수신자에게 보낼 수 있다. 기본 mock, `EMAIL_SEND_MODE=gmail` 시 실제 발송.
-
-**(3) Langfuse 실제 연동**
-
-- `langfuse<3`(v2)을 설치하고 키/리전을 연결해 `USE_LANGFUSE=true`로 활성화하였다. 파이프라인 전 노드의 `trace_execution`이 실행 순서·입출력 요약을 Langfuse 대시보드로 전송한다.
-
-**(4) 신규 API 엔드포인트**
-
-```text
-POST /api/save-style-mail      과거 발송 메일 저장(스타일 코퍼스)
-POST /api/upload-style-mails   메일 파일(.txt/.md/.eml) 업로드
-GET  /api/style-mails          저장된 스타일 샘플 개수/목록
-POST /api/send-request-mail    요청/리마인드 메일 발송(첨부 지원)
-POST /api/guide (확장)          스타일 RAG 반영 + style_used/style_sources 반환
-```
-
-**(5) UI 재구성 (4단계 파이프라인)**
-
-- 화면을 취합 업무 순서대로 4단계(① 요청 메일 보내기 ② 검증·병합 ③ 제출 현황·리마인드 ④ 공통 항목 수정)로 재구성하였다.
-- 요청 메일과 리마인드 메일은 동일한 발송 폼(제목·본문·첨부·다중 수신자)을 사용한다. 미제출자 이메일은 리마인드 폼에 자동 입력된다.
-
-**(6) 회귀 테스트**: 위 기능 포함 pytest 51개 통과.
 
 ## 2. KPI 달성도 (Plan vs Actual)
 
-| **평가 지표 (KPI)** | **목표 수치 (Task 2)** | **실제 달성 수치** | **달성 여부 및 비고** |
+### 2-1. 실제 측정 KPI
+
+| 평가 항목 | 비교 설계 | 실제 결과 | 판정 |
 | --- | --- | --- | --- |
-| **최종 파일 취합 시간 단축** | 기존 대비 70% 이상 단축 | 4개 파일/46행 기준 수동 추정 15.5분 -> 자동 약 0.08초, 99.99% 단축 | 초과 달성. 로드+검증+병합 포함 벤치마크 기준 |
-| **오류 검출 정확도** | 작성 오류/누락 50% 이상 감소 | 라벨링 오류 10건 중 10건 검출, Precision/Recall/F1 100% | 초과 달성. 오탐 0건, 미탐 0건 |
-| **검증 재현성** | 동일 입력 동일 결과 보장 | 10회 반복 오류 수 표준편차 0.0000 | 달성. LLM 판단 대신 결정론적 검증 사용 |
-| **자동 교정 효과** | 안전한 오류 일부 자동 개선 | 교정 가능 오류 6건 중 6건 교정, 자동 교정율 100%, 오류행 복구 6건 | 달성. 날짜/코드값만 교정, 필수값/중복은 재제출 대상으로 분리 |
-| **공통 항목 일괄 수정 시간 단축** | 기존 대비 80% 이상 단축 | 샘플 3개 파일/11행 전체에 `취합월` 컬럼 일괄 추가, 11셀 자동 반영 | 달성. 원본 파일 보존 테스트 통과 |
-| **제출 현황 파악 정확도** | 95% 이상 | 샘플 작성자 4명 중 3명 제출/1명 미제출 분류, 제출률 75.0% 산출 | PoC 범위 달성. 실제 메일함 연동 대신 파일명 기반 mock 추적 |
-| **자동 테스트 통과** | 핵심 기능 회귀 테스트 구축 | pytest 51개 통과, frontend build 성공 | 달성. 검증/병합/ToT/Self-Correction/가이드/제출추적/스타일RAG/메일발송/API 포함 |
+| 메일 의미 분류 | 휴리스틱 vs 실제 Azure LLM, 24건 | category+intent exact match 45.83% vs 100% | LLM 선택 근거 확보 |
+| Agentic E2E 성공률 | 동일 Worker의 Fixed vs Agentic, 14건 | 78.57% vs 100%, +21.43%p | Observation Loop 효과 확인 |
+| 구조 실패 복구 | Job 없음·첨부 유실·손상 Excel, n=3 | 0% vs 100% | 오류 종료를 안전한 Human Review로 전환 |
+| 자율 해결률 | Agentic 14건 | 71.43% | 나머지 4건은 의도된 사람 확인 |
+| E2E 중앙 처리 지연 | Fixed vs Agentic, 14건 | 2,669.13ms vs 5,837.94ms | 안전한 판단·복구를 위해 약 3.17초 증가 |
+| Excel 오류 검출 | LLM vs 규칙, 8파일·130행·오류 26건 | 둘 다 Precision/Recall/F1 1.0 | 정확도 동률 |
+| Excel 검증 속도 | 같은 데이터 | 3,933.7ms vs 21.12ms | 규칙이 약 186배 빠름 |
+| 회귀 테스트 | 전체 Backend | 148 passed, 경고 1건 | 통과 |
+| Frontend | production build | 80 modules transformed, build 성공 | 통과 |
+
+### 2-2. 아직 확정하지 않은 KPI
+
+| 항목 | 현재 상태 | 확정 방법 |
+| --- | --- | --- |
+| 사람 대비 시간 절감률 | 수작업 스톱워치 실측 없음 | 동일 14개 시나리오 최소 3회, 가능하면 2명 이상 측정 |
+| 연간 절감 시간 | 운영 빈도·인원 데이터 없음 | 실제 월간 처리 건수와 유효 시간 실측으로 계산 |
+| 실제 오발송률 | 벤치마크는 mock·자동발송 OFF | 테스트 계정과 제한 도메인 운영 리허설 후 측정 |
+| 운영 메일 분류 정확도 | 내부 고정 평가셋만 측정 | 비식별 실제 사내 메일 블라인드 평가 |
+
+사람의 Before 시간은 추정값을 실측값처럼 사용하지 않는다. `scripts/manual_roi_timer.py`로 유효 측정을 3회 이상 확보한 경우에만 ROI를 계산하도록 구현했다.
+
 
 ## 3. 창출된 핵심 가치
 
 ### 3-1. 비즈니스 가치
 
-* **취합 담당자의 반복 작업 감소**
+* **전수 수동 처리에서 예외 중심 관리로 전환**
+  일반·스팸·단순 취합 건은 자동 분류하고, 불명확·정책 변경·구조 실패 건만 사람에게 보여준다.
 
-  메일에서 작성 항목을 추출하고, 엑셀 파일을 하나씩 열어 검증, 복사, 보고서를 작성하는 흐름을 하나의 실행으로 묶었다. 특히 최종 취합 검증은 4개 파일/46행 기준 15.5분 수동 추정 작업을 약 0.08초 자동 처리로 단축하였다.
+* **메일과 Excel 사이의 끊어진 업무 연결**
+  요청, 질문, 제출, 수정본, 리마인드, 병합을 Gmail thread와 Collection Job으로 연결해 담당자의 수동 대조를 줄인다.
 
-* **오류 데이터와 정상 데이터의 분리**
+* **작성자 질문과 오류 반려의 반복 감소**
+  원래 요청의 사실에 근거한 답변과 행·컬럼 단위 오류 안내를 생성해 작성자가 무엇을 수정해야 하는지 바로 알 수 있다.
 
-  기존 수작업에서는 오류가 섞인 상태로 최종 취합본이 만들어질 수 있다. 본 시스템은 오류 행을 병합에서 제외하고, 정상 행만 병합 파일로 생성하며, 오류 데이터는 별도 오류 보고서로 남긴다.
+* **공통값 반복 수정 자동화**
+  하나의 기준 Excel 값을 같은 키를 가진 여러 대상 파일에 일괄 반영하고 원본은 보존한다.
 
-* **재제출 판단 기준 명확화**
+* **안전한 자동화 범위 확대**
+  모든 건을 승인받는 방식보다 자동화 효과가 크고, 모든 건을 자동발송하는 방식보다 운영 위험이 낮다.
 
-  날짜 형식/코드값처럼 안전하게 정규화 가능한 오류는 자동 교정하고, 필수값 누락/중복처럼 업무 판단이 필요한 오류는 재제출 대상으로 분리한다. 이를 통해 "AI가 임의로 데이터를 만들어 넣는" 위험을 줄였다.
-
-* **발표 및 실무 확장 가능한 증거 확보**
-
-  단순 화면 시연이 아니라, 벤치마크 JSON, 테스트 결과, CLI demo 로그, 생성된 병합 파일/오류 보고서를 통해 성과를 재현할 수 있다.
 
 ### 3-2. 기술적 가치
 
-* **LLM과 결정론 로직의 역할 분리**
+* **LLM과 결정적 코드의 역할을 측정으로 분리**
+  의미 분류는 LLM이 우수했고 Excel 검증은 규칙이 같은 정확도에서 약 186배 빨랐다. 기술 선택이 선호가 아니라 비교 결과에 기반한다.
 
-  LLM은 메일 분석과 가이드 초안처럼 사람이 검토 가능한 자연어 작업에 사용하고, 엑셀 검증/병합은 pandas/openpyxl 기반 규칙으로 처리하였다. 이 구조로 환각 리스크를 줄이고 재현성을 확보하였다.
+* **실질적인 Agentic 구조**
+  Supervisor가 현재 상태와 실패 observation을 보고 Worker를 선택한다. Agentic 효과는 동일 capability Fixed Workflow와 직접 비교했다. 중앙 지연은 늘었지만 메일 비동기 업무에서 더 중요한 실패 복구와 안전한 사람 전환을 확보했다.
 
-* **상태 기반 Multi-Agent 워크플로우 구현**
+* **생성 양식과 검증 규칙의 단일 출처**
+  TemplateSpec에서 배포용 Excel과 ValidationRule을 함께 만들어 작성 기준과 검증 기준의 불일치를 줄였다.
 
-  LangGraph를 사용하여 Requirement Analysis -> Planning -> Excel Validation -> Self-Correction -> Merge -> Error Report -> Report 흐름을 명시적으로 구성하였다. 실행 결과에는 agent handoff history와 reasoning log가 남아 시연 영상에서 기술 깊이를 보여줄 수 있다.
+* **안전한 Self-Correction**
+  LLM 제안을 그대로 적용하지 않고 코드 게이트와 재검증을 거쳐 오류가 감소한 경우에만 별도 교정본을 채택한다.
 
-* **Tree of Thoughts로 검증 규칙 오탐 감소**
+* **행동 전후의 이중 안전장치**
+  Supervisor의 route는 Route/Intent Gate가, 메일 발송은 Recipient/Domain/Grounding Gate가 검증한다.
 
-  Strict/Balanced/Loose 후보를 생성하고 실제 업로드 컬럼과 비교하여 선택하는 구조를 만들었다. 단일 Strict 규칙 대비 스키마 드리프트 상황에서 오탐을 줄일 수 있음을 수치로 확인하였다.
+* **관찰 가능한 AI**
+  SQLite에는 업무 행동을, Langfuse에는 LLM 호출 입력·출력·토큰·지연·오류를 남겨 문제 원인을 추적할 수 있다.
 
-* **Self-Correction의 안전 경계 설계**
 
-  Self-Correction을 무조건 자동 수정 기능으로 사용하지 않고, 날짜 정규화와 코드값 매핑처럼 안전한 범위로 제한하였다. 이는 업무 데이터 신뢰도와 자동화 효과 사이의 균형을 맞춘 설계이다.
+### 3-3. 사용자 가치
+
+* 자동 확인과 `지금 실행` 중 상황에 맞는 시작 방식을 선택할 수 있다.
+* 메일은 일반, 자동 처리, 승인 필요, 격리 상태로 쉽게 구분된다.
+* 신규 양식이나 위험 요소가 있는 건만 검토하면 된다.
+* 기본 수신자는 시스템이 구성하고 필요한 사람만 추가할 수 있다.
+* Agent가 왜 자동발송하지 않았는지 위험 사유와 Action Log로 확인할 수 있다.
+* 결과 Excel과 오류 보고서를 화면에서 바로 내려받을 수 있다.
+
 
 ## 4. 운영 및 보안 고려 사항
 
-* 인증 방식: 1차 PoC는 로컬 실행 기준이며 별도 사용자 인증은 적용하지 않았다. 운영 전환 시 사내 SSO 또는 승인된 업무 포털 인증과 연동해야 한다.
+| 영역 | 현재 안전장치 | 운영 전 보완 |
+| --- | --- | --- |
+| 메일 발송 | mock 기본값, AUTO_SEND OFF, 허용 도메인, 신뢰도·첨부·수신자 Gate | 테스트 계정 리허설, 발송 한도, 취소·승인 감사 |
+| 메일 읽기 | Gmail OAuth token, 중복 방지 | 최소 권한 scope, token 암호화·회수 정책 |
+| 개인정보 | 로컬 SQLite·파일 저장 | 컬럼 마스킹, 암호화, 보존 기간, 삭제 정책 |
+| 권한 | 로컬 단일 사용자 | SSO, 역할별 승인·다운로드 권한 |
+| 조직도 | 파일 기반 CSV/JSON, 조회 실패 시 중단 | 사내 Directory API와 권한 동기화 |
+| 프롬프트 공격 | 위험 분류, 스팸 격리, route/policy gate | 공격 패턴 회귀셋과 보안 모니터링 확대 |
+| LLM 장애 | 휴리스틱 폴백, 제한적 retry, Human Review | circuit breaker, 장애 알림, 모델 failover |
+| 관찰 도구 장애 | Langfuse 실패가 본 흐름에 영향 없음 | 민감정보 마스킹과 접근 통제 |
+| Excel 원본 | 원본 미수정, 교정·동기화 결과 별도 저장 | 파일 무결성 hash와 문서 보존 연동 |
 
-* 권한 통제: 1차 PoC에서는 로컬 파일만 처리한다. 실제 사내 메일/문서 시스템 연동 시 사용자의 메일함과 첨부파일 접근 권한을 반드시 검증해야 한다.
-
-* 메일 발송 통제: 작성 가이드와 요청 메일 초안을 먼저 생성한 뒤, 사용자가 UI에서 "승인 후 이메일 발송"을 눌러야만 발송 API가 호출된다. 기본값은 `EMAIL_SEND_MODE=mock`이며, 실제 Gmail 발송은 `EMAIL_SEND_MODE=gmail`, `GMAIL_CREDENTIALS_FILE`, `GMAIL_TOKEN_FILE`, `GMAIL_SENDER` 설정 후 OAuth 승인을 거쳐 수행한다.
-
-* 원본 보존: 엑셀 원본 파일은 수정하지 않는다. 병합 파일, 오류 보고서, 일괄 수정 결과 파일은 별도 디렉터리에 생성한다.
-
-* 데이터 추측 금지: 필수값 누락과 중복 데이터는 AI가 임의로 채우거나 삭제하지 않는다. 오류 보고서에 기록하고 재제출 또는 사용자 확인 대상으로 남긴다.
-
-* 로그 최소화: 실행 로그에는 request_id, node, 요약 통계, 오류 수 중심으로 기록한다. 운영 단계에서는 이름, 이메일, 원문 메일, 첨부 데이터의 마스킹 정책을 추가해야 한다.
-
-* 장애 대응: Azure OpenAI 키가 없거나 LLM 호출이 실패해도 휴리스틱 분석으로 기본 PoC가 동작한다. 엑셀 검증은 LLM 없이도 수행된다.
 
 ## 5. 회고 및 향후 확장
 
+### 잘 해결한 점
+
+* 멘토 피드백이었던 “LLM 활용이 얕고 Agentic하지 않다”는 문제를 기능과 비교 실험 양쪽에서 해결했다.
+* Gmail 이벤트, Supervisor 판단, Worker Tool, observation 재계획을 연결해 고정 순차 파이프라인을 벗어났다.
+* LLM이 잘하는 자연어 의미 판단과 코드가 잘하는 정확한 검증을 구분했다.
+* 단순 질문은 자동화하면서 정책 변경은 사람에게 넘겨 실무 적용 가능성을 높였다.
+* 초기의 Excel 병합·공통값 일괄 업데이트 기능을 최종 Agent 흐름에서 유지했다.
+* 정량 수치를 실제 코드 경로와 JSON 증빙으로 남겼다.
+
 ### 기술적 한계
 
-* 실제 Gmail 발송 Adapter는 구현했지만, Gmail API OAuth credentials와 사용자 승인이 필요하다. 제출 추적은 아직 Gmail 회신 메일을 직접 읽는 방식이 아니라 샘플 작성자 목록과 파일명 기반 mock 로직으로 검증하였다.
-
-* 표준 양식 또는 유사한 구조의 엑셀 파일을 대상으로 설계되어 있어, 병합 셀/매크로/복잡한 다중 시트 양식은 추가 처리가 필요하다.
-
-* 현재 RAG는 선택적 구조와 샘플 검색 수준이며, 운영 수준의 Vector DB/문서 권한 관리/검색 품질 평가는 후속 과제이다.
-
-* 벤치마크 데이터셋은 4개 파일/46행 규모이므로, 100행/1,000행 규모 추가 성능 측정을 수행하면 신뢰도가 더 높아진다.
+* 24건 분류, 14건 E2E, 130행 검증은 프로젝트 내부 통제 데이터이며 운영 분포 전체를 대표하지 않는다.
+* 실제 사람의 수작업 시간 측정이 없어 시간 절감률과 연간 ROI는 아직 확정할 수 없다.
+* 실제 Gmail 자동발송은 계정·허용 도메인 설정에 의존하며 기본값은 비활성화다.
+* 복잡한 다중 시트, VBA, 병합 셀, 암호화 Excel은 완전 자동 처리 대상이 아니다.
+* SQLite는 로컬·단일 인스턴스에는 적합하지만 다중 사용자 운영에는 외부 DB와 동시성 설계가 필요하다.
+* 사내 SSO, RBAC, 데이터 마스킹, 보존 정책은 운영 전 추가해야 한다.
 
 ### Next Step
 
-* **실제 업무 양식 확대 테스트**
+1. 비식별 실제 업무 메일 50건 이상으로 분류 블라인드 평가
+2. 동일 14개 업무의 사람 수작업 시간 최소 3회 실측 및 ROI 계산
+3. 제한된 테스트 계정·도메인에서 Gmail 자동발송 E2E 리허설
+4. 실제 조직도 API와 SSO/RBAC 연동
+5. 업무 유형별 TemplateSpec·검증 계약 카탈로그 확대
+6. Langfuse 기반 분류 오류, fallback 비율, token, latency 운영 대시보드 구축
+7. PostgreSQL·Object Storage로 상태와 파일 저장 확장
+8. 회사 보안 정책에 맞춘 개인정보 마스킹·암호화·보존기간 적용
 
-  부서별 양식 10개 이상, 100행 이상 데이터셋을 만들어 검출 정확도, 처리 시간, 오탐/미탐을 추가 측정한다.
 
-* **메일 수신/첨부 수집 Adapter 확장**
+## 6. 최종 검증 및 산출물 근거
 
-  현재 승인 기반 발송 API는 mock/Gmail 발송 Adapter로 분리되어 있다. 다음 단계에서는 Gmail 회신 메일 검색, 첨부 엑셀 수집, 사내 메일 API Adapter를 추가한다.
+### 재현 명령
 
-* **RAG 기준 문서 고도화**
+```powershell
+cd D:\AI_MASTER\smart-collect-assistant
+$env:PYTHONPATH='backend'
 
-  컬럼 정의서, 코드값 기준, 과거 취합 사례를 문서화하고, 작성 기준이 불명확한 경우에만 RAG Reference Agent가 호출되도록 한다.
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m smart_collect.benchmark_classifier --use-llm
+.\.venv\Scripts\python.exe -m smart_collect.benchmark_roi --use-llm
 
-* **운영 보안 설계 보강**
-
-  사내 SSO, 사용자별 권한 검증, 개인정보 마스킹, 감사 로그, 파일 보관 기간 정책을 추가한다.
-
-## 6. 최종 발표 및 시연 구성
-
-### 발표자료 구성
-
-1. 프로젝트 개요: 취합 업무 15.5분 수동 검증을 약 0.08초로 줄이고, 오류 검출 F1 100%를 달성했다는 메시지 중심
-2. 기술 아키텍처: React/FastAPI/LangGraph/pandas/openpyxl 흐름과 기술 스택 활용 방식 중심
-3. 핵심 기술 과제: 단순 LLM 검증의 환각 위험, Strict 규칙의 오탐 위험, 무제한 자동 교정의 데이터 추측 위험을 ToT + 결정론 검증 + Self-Correction 경계로 해결한 과정 중심
-
-### 시연 영상 구성안
-
-```text
-0:00 ~ 0:30  문제 시나리오 소개
-0:30 ~ 1:20  React 화면에서 샘플 메일/엑셀 업로드 및 실행
-1:20 ~ 2:40  CLI demo에서 PLAN / ToT / Self-Correction 로그 확대
-2:40 ~ 3:40  오류 상세, 병합 파일, 오류 보고서 확인
-3:40 ~ 4:30  benchmark 결과: F1 100%, 재현성 0, 99.99% 시간 단축
-4:30 ~ 5:00  왜 이 기술 스택이 필요했는지 한 문장으로 정리
+cd frontend
+npm run build
 ```
 
-최종 Key Message:
+### 근거 파일
 
-```text
-Smart Collect Assistant는 LLM이 잘하는 메일 이해와, 규칙 기반 코드가 잘하는 엑셀 검증을 분리하고, LangGraph + ToT + Self-Correction으로 취합 업무의 속도와 신뢰성을 동시에 높인 멀티 에이전트 PoC입니다.
-```
+| 근거 | 파일 |
+| --- | --- |
+| 프로젝트 개요와 실행법 | `README.md` |
+| 이벤트 기반 Agent Graph | `backend/smart_collect/autonomous_graph.py` |
+| Gmail 수집과 스케줄 | `backend/smart_collect/inbox_pipeline.py`, `scheduler.py`, `tools/inbox_tools.py` |
+| 메일 분류 비교 | `data/classifier_benchmark.json` |
+| Excel LLM/규칙 비교 | `data/llm_vs_rule_benchmark_large.json` |
+| Fixed/Agentic E2E 비교 | `data/roi_benchmark_llm.json` |
+| 평가 방법과 해석 제한 | `docs/evaluation_protocol.md` |
+| 자율형 Inbox 상세 | `docs/autonomous_inbox.md` |
+| 사람 Before 측정 | `scripts/manual_roi_timer.py` |
+
+### 최종 검증 결과
+
+* Backend: 148 passed, 경고 1건
+* Frontend: production build 성공
+* 분류: 휴리스틱 45.83% vs Azure LLM 100%, 24건
+* Agentic: Fixed 78.57% vs Agentic 100%, 14건
+* 실패 복구: 0% vs 100%, n=3
+* E2E 중앙 지연: Fixed 2,669.13ms vs Agentic 5,837.94ms
+* Excel: 두 방식 F1 1.0, 규칙 평균 21.12ms, LLM 평균 3,933.7ms
+
+본 결과는 최종 코드와 내부 통제 평가셋에 대한 실제 실행 결과다. 사람 대비 시간 절감률과 운영 효과는 실측 데이터가 확보된 이후 별도로 확정한다.

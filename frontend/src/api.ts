@@ -291,7 +291,7 @@ export interface InboxItem {
   subject: string;
   received_at: string;
   classification: string;
-  intent?: "request" | "submission" | "question" | "correction" | "extension" | "reminder" | "other";
+  intent?: "request" | "submission" | "question" | "correction" | "extension" | "reminder" | "completion" | "other";
   confidence: number;
   tier: string;
   status: string;
@@ -363,10 +363,18 @@ export async function inboxQueue(
 
 export async function inboxSend(
   messageId: string,
-  extraRecipients: string[] = []
+  options: {
+    extraRecipients?: string[];
+    recipients?: string[];
+    subject?: string;
+    body?: string;
+  } = {}
 ): Promise<{ message_id: string; send_result: SendEmailResponse; additional_only: boolean }> {
   const { data } = await client.post(`/inbox/${encodeURIComponent(messageId)}/send`, {
-    extra_recipients: extraRecipients,
+    extra_recipients: options.extraRecipients ?? [],
+    recipients: options.recipients,
+    subject: options.subject,
+    body: options.body,
   });
   return data;
 }
