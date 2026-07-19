@@ -8,9 +8,11 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Any, Optional
 
 from .config import settings
+from .observability import log_generation
 from .state import ExtractedRequirements
 
 _SYSTEM_PROMPT = """당신은 회사 내부 취합 요청 메일을 분석하는 Requirement Analysis Agent입니다.
@@ -39,19 +41,29 @@ def get_client():
     )
 
 
-def chat(messages: list[dict], *, temperature: float = 0.0) -> Optional[str]:
-    """공용 채팅 호출. 응답 문자열 또는 None(폴백)."""
+def chat(messages: list[dict], *, temperature: float = 0.0, name: str = "chat") -> Optional[str]:
+    """공용 채팅 호출. 응답 문자열 또는 None(폴백). Langfuse에 프롬프트·응답을 기록한다."""
     client = get_client()
     if client is None:
         return None
+    started = time.perf_counter()
     try:
         resp = client.chat.completions.create(
             model=settings.azure_deployment,
             messages=messages,
             temperature=temperature,
         )
-        return resp.choices[0].message.content
-    except Exception:  # noqa: BLE001 - 폴백 보장
+        content = resp.choices[0].message.content
+        log_generation(
+            name, model=settings.azure_deployment, messages=messages,
+            output=content, started=started, usage=getattr(resp, "usage", None),
+        )
+        return content
+    except Exception as exc:  # noqa: BLE001 - 폴백 보장
+        log_generation(
+            name, model=settings.azure_deployment, messages=messages,
+            output=None, started=started, error=str(exc),
+        )
         return None
 
 
@@ -72,6 +84,7 @@ def chat_json(
     if client is None:
         return None
 
+    started = time.perf_counter()
     request = {
         "model": settings.azure_deployment,
         "messages": messages,
@@ -89,6 +102,8 @@ def chat_json(
         {"type": "json_object"},
         None,
     ]
+    last_raw: str | None = None
+    last_error: str | None = None
     for response_format in formats:
         try:
             kwargs = dict(request)
@@ -96,13 +111,25 @@ def chat_json(
                 kwargs["response_format"] = response_format
             response = client.chat.completions.create(**kwargs)
             content = response.choices[0].message.content
+            last_raw = content
             if not content:
                 continue
             data = _extract_json(content)
             if isinstance(data, dict):
+                log_generation(
+                    schema_name, model=settings.azure_deployment, messages=messages,
+                    output=data, started=started, usage=getattr(response, "usage", None),
+                    metadata={"raw_content": content, "response_format": (response_format or {}).get("type")},
+                )
                 return data
-        except Exception:  # 지원하지 않는 응답 형식/일시 오류는 다음 경로로 폴백
+        except Exception as exc:  # 지원하지 않는 응답 형식/일시 오류는 다음 경로로 폴백
+            last_error = str(exc)
             continue
+    log_generation(
+        schema_name, model=settings.azure_deployment, messages=messages,
+        output=last_raw, started=started,
+        error=last_error or "모든 response_format 시도 후에도 유효한 JSON을 얻지 못함",
+    )
     return None
 
 

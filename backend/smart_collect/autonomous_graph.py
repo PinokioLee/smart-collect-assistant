@@ -16,6 +16,7 @@ from langgraph.graph import END, START, StateGraph
 
 from . import job_store
 from .config import DATA_DIR, settings
+from .observability import start_trace
 from .state import ExtractedRequirements, ValidationRule
 from .tools.email_tools import EmailSendRequest, send_email
 from .tools.excel_tools import LoadedFile, load_excel_files, merge_valid_rows, validate_excel_data
@@ -726,7 +727,12 @@ def run_mail_event(
         "db_path": str(db_path) if db_path else None,
         "prefer_llm": prefer_llm, "auto_send_enabled": auto_send_enabled,
     }
-    result = build_inbox_agent_graph().invoke(initial)
+    with start_trace(
+        "agentic-supervisor-graph",
+        trace_id=f"{message.id}:agentic",
+        metadata={"event_id": message.id, "subject": message.subject, "prefer_llm": prefer_llm},
+    ):
+        result = build_inbox_agent_graph().invoke(initial)
     record = result.get("record") or _base_record(result, "needs_review")
     record.setdefault("artifacts", {})["agent_trace"] = job_store.list_actions(message.id, db_path)
     record["artifacts"]["architecture"] = "agentic_supervisor_graph"
@@ -751,30 +757,35 @@ def run_fixed_mail_event(
         "prefer_llm": prefer_llm,
         "auto_send_enabled": auto_send_enabled,
     }
-    state.update(_intake(state))
-    route = _default_route(state["classification"])
-    state["route"] = route
-    _log(state, "Fixed Workflow", "select_fixed_action", "success", {"route": route})
-    handlers = {
-        "general": _general,
-        "quarantine": _quarantine,
-        "request_worker": _request_worker,
-        "submission_worker": _submission_worker,
-        "qa_worker": _qa_worker,
-        "extension_worker": _extension_worker,
-        "human_review": _human_review,
-    }
-    result = handlers[route](state)
-    state.update(result)
-    if result.get("outcome") == "failure":
-        _log(state, "Fixed Workflow", "stop_on_worker_failure", "failure", result.get("observation", {}))
-        record = _base_record(
-            state,
-            "processing_error",
-            error=str(result.get("observation") or "worker_failure"),
-        )
-    else:
-        record = result.get("record") or _base_record(state, "processing_error")
+    with start_trace(
+        "fixed-workflow-event",
+        trace_id=f"{message.id}:fixed",
+        metadata={"event_id": message.id, "subject": message.subject, "prefer_llm": prefer_llm},
+    ):
+        state.update(_intake(state))
+        route = _default_route(state["classification"])
+        state["route"] = route
+        _log(state, "Fixed Workflow", "select_fixed_action", "success", {"route": route})
+        handlers = {
+            "general": _general,
+            "quarantine": _quarantine,
+            "request_worker": _request_worker,
+            "submission_worker": _submission_worker,
+            "qa_worker": _qa_worker,
+            "extension_worker": _extension_worker,
+            "human_review": _human_review,
+        }
+        result = handlers[route](state)
+        state.update(result)
+        if result.get("outcome") == "failure":
+            _log(state, "Fixed Workflow", "stop_on_worker_failure", "failure", result.get("observation", {}))
+            record = _base_record(
+                state,
+                "processing_error",
+                error=str(result.get("observation") or "worker_failure"),
+            )
+        else:
+            record = result.get("record") or _base_record(state, "processing_error")
     record.setdefault("artifacts", {})["agent_trace"] = job_store.list_actions(message.id, db_path)
     record["artifacts"]["architecture"] = "llm_fixed_workflow"
     return record
