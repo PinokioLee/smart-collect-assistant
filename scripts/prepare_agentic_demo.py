@@ -21,6 +21,7 @@ from smart_collect.tools.inbox_tools import InboxMessage
 
 DEMO_IDS = [
     "DEMO-REQ", "DEMO-BAD", "DEMO-CORRECT", "DEMO-ORPHAN", "DEMO-SPAM",
+    "DEMO-QUESTION", "DEMO-BETA-OK", "DEMO-GAMMA-OK",
 ]
 DEMO_JOBS = ["SC-DEMO-REQ", "SC-DEMO-SALES", "SC-DEMO-DEADLINE"]
 
@@ -93,6 +94,9 @@ def prepare(live_llm: bool) -> None:
                 {"name": "Alpha", "email": "alpha@company.com"},
                 {"name": "Beta", "email": "beta@company.com"},
                 {"name": "Gamma", "email": "gamma@company.com"},
+            ],
+            "requester_recipients": [
+                {"name": "팀장", "email": "manager@company.com", "recipient_type": "to"},
             ],
             "required_fields": columns,
             "validation_rule": {
@@ -192,6 +196,53 @@ def prepare(live_llm: bool) -> None:
         db,
     )
     run_deadline_agent(db_path=db, prefer_llm=live_llm, auto_send_enabled=False)
+
+    # 시나리오 뒷부분: 작성자 질문 자동응답 + 전원 제출 완료 → 최종 요청자 회신 초안.
+    # SC-DEMO-SALES는 이 시점까지 alpha만 정상 제출한 상태(collecting)라 DEMO-ORPHAN의
+    # "활성 Job 2개(SC-DEMO-SALES, SC-DEMO-DEADLINE) → 판단 불가" 시나리오에 영향 없음.
+    _run_and_save(
+        _message(
+            "DEMO-QUESTION",
+            "[SC-DEMO-SALES] 진행상태 값 문의",
+            "제출 양식의 진행상태 컬럼에 어떤 값을 넣어야 하는지, 제출 기한이 정확히 "
+            "언제까지인지 확인 부탁드립니다.",
+            sender="alpha@company.com",
+        ),
+        live_llm=live_llm,
+        db=db,
+    )
+
+    beta_ok = demo_dir / "7월_프로젝트_실적_beta.xlsx"
+    pd.DataFrame(
+        [["P-1002", "이철수", 8300000, "정상"]], columns=columns
+    ).to_excel(beta_ok, index=False)
+    _run_and_save(
+        _message(
+            "DEMO-BETA-OK",
+            "[SC-DEMO-SALES] 실적 제출합니다",
+            "첨부 파일 확인 부탁드립니다.",
+            sender="beta@company.com",
+            path=str(beta_ok),
+        ),
+        live_llm=live_llm,
+        db=db,
+    )
+
+    gamma_ok = demo_dir / "7월_프로젝트_실적_gamma.xlsx"
+    pd.DataFrame(
+        [["P-1003", "박영희", 15000000, "지연"]], columns=columns
+    ).to_excel(gamma_ok, index=False)
+    _run_and_save(
+        _message(
+            "DEMO-GAMMA-OK",
+            "[SC-DEMO-SALES] 실적 제출합니다",
+            "첨부 파일 확인 부탁드립니다.",
+            sender="gamma@company.com",
+            path=str(gamma_ok),
+        ),
+        live_llm=live_llm,
+        db=db,
+    )
 
     print(f"demo prepared: live_llm={live_llm}, azure_ready={settings.azure_ready}")
     print("No Gmail message was read or sent. AUTO_SEND was forced off.")
