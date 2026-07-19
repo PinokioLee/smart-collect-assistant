@@ -138,7 +138,13 @@ Excel의 날짜·숫자·필수값 검증에서는 규칙과 LLM의 F1이 같고
 `data/roi_benchmark_llm.json`에 보존합니다.
 
 사람의 Before 시간은 임의로 가정하지 않습니다. 다음 도구로 최소 3회 측정한 경우에만
-동일 시나리오 수로 정규화한 시간 절감률과 배수를 계산합니다.
+`roi`(실측)를 계산하며, 실측 CSV가 없으면 `roi_claim_available=false`로 남습니다.
+
+발표용 참고치로는 작업 분해 기반 **분석적 추정**(스톱워치 실측 아님)을 별도로 제공합니다.
+`docs/roi_manual_estimate.md`에 시나리오별 가정과 산식을 공개했고,
+`scripts/apply_roi_estimate.py`가 이를 `roi_benchmark_llm.json`의 `roi_estimated`
+키(Agent 시간은 실측, 사람 시간만 추정)로 주입합니다. 현재 추정치는 **약 23배 / 약 96% 단축**이며,
+발표에서는 반드시 `~`로 추정임을 표기합니다. 실측 CSV가 준비되면 아래 명령이 추정을 대체합니다.
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\manual_roi_timer.py --participant P01

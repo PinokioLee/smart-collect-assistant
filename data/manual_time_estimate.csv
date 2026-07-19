@@ -1,0 +1,13 @@
+run,participant,scenario_count,active_minutes,measured_at,notes
+1,ESTIMATE,1,0.5,2026-07-20,analytical-estimate:general
+2,ESTIMATE,1,0.5,2026-07-20,analytical-estimate:spam
+3,ESTIMATE,1,6.0,2026-07-20,analytical-estimate:attach-request
+4,ESTIMATE,1,12.0,2026-07-20,analytical-estimate:new-template
+5,ESTIMATE,1,3.0,2026-07-20,analytical-estimate:valid-submission
+6,ESTIMATE,1,6.0,2026-07-20,analytical-estimate:error-submission
+7,ESTIMATE,1,4.0,2026-07-20,analytical-estimate:question
+8,ESTIMATE,1,2.0,2026-07-20,analytical-estimate:extension
+9,ESTIMATE,1,3.0,2026-07-20,analytical-estimate:no-jobid
+10,ESTIMATE,1,3.5,2026-07-20,analytical-estimate:correction
+11,ESTIMATE,1,1.0,2026-07-20,analytical-estimate:injection
+12,ESTIMATE,1,5.0,2026-07-20,analytical-estimate:deadline-reminder

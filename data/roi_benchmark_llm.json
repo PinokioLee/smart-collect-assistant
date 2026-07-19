@@ -451,5 +451,25 @@
     "수작업 시간 실측 CSV가 없으면 시간 절감률을 계산하지 않음",
     "live_llm 모드는 모델/네트워크 상태에 따라 지연과 비용이 달라짐",
     "실무 적용 전 조직도·권한·감사·장애복구 통합 검증이 필요함"
-  ]
+  ],
+  "manual_time_estimate": {
+    "n": 12,
+    "median_active_minutes": 3.25,
+    "median_seconds_per_scenario": 195.0,
+    "min_seconds_per_scenario": 30.0,
+    "max_seconds_per_scenario": 720.0,
+    "protocol": "파일 열기·검증·반려/승인 판단을 포함한 사람의 능동 작업시간",
+    "evidence": "analytical_estimate",
+    "disclaimer": "스톱워치 실측 아님 — 작업 분해 기반 추정",
+    "methodology_doc": "docs/roi_manual_estimate.md"
+  },
+  "roi_estimated": {
+    "manual_normalized_batch_seconds": 2340.0,
+    "agentic_actual_batch_seconds": 99.805,
+    "time_reduction_pct": 95.73,
+    "speedup_x": 23.45,
+    "basis": "동일 12개 시나리오로 정규화",
+    "evidence": "analytical_estimate",
+    "note": "사람 시간만 추정, Agent 시간은 실측(agentic_supervisor_graph.e2e_batch_seconds)"
+  }
 }
