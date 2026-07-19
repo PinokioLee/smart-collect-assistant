@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import shutil
 import sys
+from contextlib import asynccontextmanager
 from datetime import datetime
+from email.utils import parseaddr
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -37,12 +39,22 @@ from smart_collect.state import AgentState  # noqa: E402
 from smart_collect.tools import rag_tools  # noqa: E402
 from smart_collect import store  # noqa: E402
 from smart_collect import scheduler as sched_mod  # noqa: E402
+from smart_collect import job_store  # noqa: E402
 from smart_collect.inbox_pipeline import ingest_inbox  # noqa: E402
 from smart_collect.tools.email_tools import EmailSendRequest, send_email  # noqa: E402
 
 UPLOAD_DIR = DATA_DIR / "uploads"
 
-app = FastAPI(title="Smart Collect Assistant", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """프로세스 수명과 Inbox Scheduler 수명을 일치시킨다."""
+    sched_mod.start()
+    yield
+
+
+# 개발 서버 재로딩 시 .env의 최신 자동화 정책도 함께 다시 읽힌다.
+app = FastAPI(title="Smart Collect Assistant", version="0.2.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # PoC: 로컬 개발 편의. 운영에선 도메인 제한.
@@ -105,6 +117,8 @@ def health() -> dict:
         "gmail_ready": bool(settings.gmail_credentials_file)
         if settings.email_send_mode == "gmail"
         else False,
+        "gmail_read_ready": settings.gmail_read_ready,
+        "auto_send_enabled": settings.auto_send_enabled,
     }
 
 
@@ -191,10 +205,10 @@ def download_template(template_id: str) -> FileResponse:
 
 @app.post("/api/inbox/ingest")
 def inbox_ingest(
-    max_results: int = Form(20),
+    max_results: int = Form(100),
     use_llm: bool = Form(True),
 ) -> dict:
-    """수신함 1회 수집·분류·초안 생성 (Phase A). 기본은 mock 수신함."""
+    """수신함 1회 자율 처리. 자동 발송은 서버 안전 정책을 통과할 때만 수행한다."""
     result = ingest_inbox(prefer_llm=use_llm, max_results=max_results)
     result["read_mode"] = settings.email_read_mode
     return result
@@ -202,7 +216,7 @@ def inbox_ingest(
 
 @app.get("/api/inbox/queue")
 def inbox_queue(status: str | None = None) -> dict:
-    """검토 큐 조회(선택: status 필터). draft_ready/needs_review/general/sent/error."""
+    """검토 큐 조회. draft_ready/needs_review/general/quarantined/sent/error."""
     store.init_db()  # 최초 조회(수집 전)에도 안전하도록 테이블 보장
     return {
         "queue": store.list_records(status=status),
@@ -211,10 +225,16 @@ def inbox_queue(status: str | None = None) -> dict:
     }
 
 
-@app.on_event("startup")
-def _start_scheduler() -> None:
-    """앱 시작 시 저장된 스케줄로 자동 수집 스케줄러를 켠다."""
-    sched_mod.start()
+@app.get("/api/agent/jobs")
+def agent_jobs(status: str | None = None) -> dict:
+    jobs = job_store.list_jobs(status=status)
+    return {"jobs": jobs, "count": len(jobs)}
+
+
+@app.get("/api/agent/actions/{event_id}")
+def agent_actions(event_id: str) -> dict:
+    actions = job_store.list_actions(event_id)
+    return {"event_id": event_id, "actions": actions}
 
 
 @app.get("/api/schedule")
@@ -225,7 +245,7 @@ def get_schedule() -> dict:
 
 @app.post("/api/schedule")
 async def set_schedule(request: Request) -> dict:
-    """화면에서 지정한 스케줄을 저장·반영한다. (자동 발송은 하지 않음)"""
+    """화면 스케줄을 반영한다. 발송은 별도 Auto-send Policy Gate를 따른다."""
     body = await request.json()
     try:
         return sched_mod.apply(body)
@@ -240,27 +260,78 @@ def schedule_run_now() -> dict:
 
 
 @app.post("/api/inbox/{message_id}/send")
-def inbox_send(message_id: str) -> dict:
-    """검토 완료한 초안을 승인·발송한다(Human-in-the-loop). 기존 발송 경로 재사용."""
+def inbox_send(message_id: str, payload: dict | None = None) -> dict:
+    """승인 발송 또는 처리 완료 메일의 추가 수신자 발송."""
     rec = store.get_record(message_id)
     if not rec:
         raise HTTPException(status_code=404, detail="해당 메일을 찾을 수 없습니다.")
-    if rec["status"] != "draft_ready":
+    if rec["status"] not in {"draft_ready", "sent"}:
         raise HTTPException(
-            status_code=400, detail="발송 가능한 초안(draft_ready) 상태가 아닙니다."
+            status_code=400, detail="승인 대기 또는 발송 완료 상태에서만 발송할 수 있습니다."
         )
-    to = [c["email"] for c in rec.get("recipients", []) if c.get("email")]
+
+    payload = payload or {}
+    raw_extras = payload.get("extra_recipients") or []
+    if isinstance(raw_extras, str):
+        raw_extras = raw_extras.split(",")
+
+    def normalize(values) -> list[str]:
+        out: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            email = parseaddr(str(value))[1].strip().lower()
+            if email and "@" in email and email not in seen:
+                seen.add(email)
+                out.append(email)
+        return out
+
+    base_to = normalize(c.get("email", "") for c in rec.get("recipients", []))
+    extras = normalize(raw_extras)
+    if rec["status"] == "sent":
+        # 이미 받은 사람에게 중복 발송하지 않고 새로 추가한 사람에게만 보낸다.
+        to = [email for email in extras if email not in set(base_to)]
+        additional_only = True
+    else:
+        to = list(dict.fromkeys([*base_to, *extras]))
+        additional_only = False
     if not to:
-        raise HTTPException(status_code=400, detail="수신자가 없습니다.")
+        detail = "추가 발송할 새 수신자를 입력해 주세요." if rec["status"] == "sent" else "수신자가 없습니다."
+        raise HTTPException(status_code=400, detail=detail)
+
     result = send_email(
         EmailSendRequest(
             to=to,
             subject=rec.get("draft_subject") or "[취합 요청]",
             body=rec.get("draft_body") or "",
+            attachment_paths=[
+                p for p in rec.get("artifacts", {}).get("attachment_paths", [])
+                if Path(p).exists()
+            ],
         )
     )
-    store.mark_sent(message_id, result.get("message_id"))
-    return {"message_id": message_id, "send_result": result}
+    if additional_only:
+        rec.setdefault("artifacts", {}).setdefault("additional_sends", []).append({
+            "recipients": to,
+            "message_id": result.get("message_id"),
+            "sent_at": datetime.now().isoformat(timespec="seconds"),
+        })
+        store.upsert_record(rec)
+    else:
+        existing = {c.get("email", "").lower() for c in rec.get("recipients", [])}
+        rec["recipients"].extend(
+            {"name": email.split("@", 1)[0], "dept": "수동 추가", "email": email}
+            for email in extras if email not in existing
+        )
+        store.upsert_record(rec)
+        store.mark_sent(message_id, result.get("message_id"))
+        job_id = rec.get("artifacts", {}).get("job_id")
+        if job_id and rec.get("intent") == "request":
+            job_store.update_job(job_id, status="collecting")
+    return {
+        "message_id": message_id,
+        "send_result": result,
+        "additional_only": additional_only,
+    }
 
 
 @app.post("/api/collect")

@@ -10,6 +10,8 @@ export interface Health {
   use_langfuse: boolean;
   email_send_mode: string;
   gmail_ready: boolean;
+  gmail_read_ready: boolean;
+  auto_send_enabled: boolean;
 }
 
 export async function getHealth(): Promise<Health> {
@@ -288,6 +290,7 @@ export interface InboxItem {
   subject: string;
   received_at: string;
   classification: string;
+  intent?: "request" | "submission" | "question" | "correction" | "extension" | "reminder" | "other";
   confidence: number;
   tier: string;
   status: string;
@@ -298,6 +301,24 @@ export interface InboxItem {
   source: string;
   grounding: Grounding;
   sources: string[];
+  risk_flags?: string[];
+  decision?: {
+    action?: "auto_send" | "review" | "ignore" | "quarantine";
+    template_action?: "use_attached" | "generate" | "review" | "none";
+    complexity?: "simple" | "complex";
+    reasons?: string[];
+    risk_flags?: string[];
+    source?: string;
+  };
+  artifacts?: {
+    strategy?: string;
+    recipient_source?: "original_sender_cc" | "directory_explicit_target" | "missing_recipients" | string;
+    template_id?: string | null;
+    filename?: string;
+    download?: string | null;
+    job_id?: string;
+    agent_trace?: { seq: number; agent: string; action: string; outcome: string; detail?: Record<string, any> }[];
+  };
   sent: boolean;
 }
 
@@ -306,6 +327,9 @@ export interface IngestResult {
   processed_new: number;
   skipped: number;
   by_status: Record<string, number>;
+  by_category?: Record<string, number>;
+  by_intent?: Record<string, number>;
+  automation?: { sent: number; review_required: number; quarantined: number };
   queue: InboxItem[];
   read_mode: string;
 }
@@ -327,9 +351,28 @@ export async function inboxQueue(
 }
 
 export async function inboxSend(
-  messageId: string
-): Promise<{ message_id: string; send_result: SendEmailResponse }> {
-  const { data } = await client.post(`/inbox/${encodeURIComponent(messageId)}/send`);
+  messageId: string,
+  extraRecipients: string[] = []
+): Promise<{ message_id: string; send_result: SendEmailResponse; additional_only: boolean }> {
+  const { data } = await client.post(`/inbox/${encodeURIComponent(messageId)}/send`, {
+    extra_recipients: extraRecipients,
+  });
+  return data;
+}
+
+export interface CollectionJob {
+  job_id: string;
+  title: string;
+  deadline?: string | null;
+  status: "awaiting_approval" | "collecting" | "partial" | "completed" | string;
+  recipients: { name: string; dept: string; email: string }[];
+  required_fields: string[];
+  template_id?: string | null;
+  result?: Record<string, any>;
+}
+
+export async function getAgentJobs(status?: string): Promise<{ jobs: CollectionJob[]; count: number }> {
+  const { data } = await client.get("/agent/jobs", { params: status ? { status } : {} });
   return data;
 }
 
@@ -351,6 +394,7 @@ export interface ScheduleStatus {
   last_run: string | null;
   last_summary: { fetched: number; processed_new: number; by_status: Record<string, number> } | null;
   last_error: string | null;
+  last_reason?: "schedule" | "manual" | null;
 }
 
 export async function getSchedule(): Promise<ScheduleStatus> {

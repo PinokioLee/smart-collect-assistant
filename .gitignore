@@ -13,6 +13,9 @@ data/credentials.json
 data/client_secret*.json
 data/gmail_token.json
 data/gmail_read_token.json
+# Gmail에서 내려받은 실제 첨부와 수동 측정 원본은 개인정보/업무자료이므로 제외
+data/inbox_attachments/
+data/manual_time_measurements.csv
 
 # Data: ignore generated outputs & uploads & samples (regenerable)
 data/merged_files/*
@@ -21,6 +24,7 @@ data/updated_files/*
 data/uploads/
 data/templates/
 data/samples/
+data/demo/
 data/style_samples/
 data/traces/*
 !data/traces/.gitkeep
@@ -31,6 +35,7 @@ data/schedule_config.json
 !data/error_reports/.gitkeep
 # 단, 실측 벤치마크 지표(JSON)는 추적 (발표 근거)
 !data/benchmark_metrics.json
+!data/classifier_benchmark.json
 
 # Node / frontend
 node_modules/

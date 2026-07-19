@@ -15,7 +15,10 @@ from ..state import ExtractedRequirements
 # ---------- 작성 가이드 ----------
 
 def generate_writing_guide(
-    req: ExtractedRequirements, references: list[dict] | None = None
+    req: ExtractedRequirements,
+    references: list[dict] | None = None,
+    *,
+    prefer_llm: bool = True,
 ) -> dict:
     """작성자용 가이드(쉬운 안내문)를 생성한다.
 
@@ -35,7 +38,7 @@ def generate_writing_guide(
         f"요청 제목: {req.request_title}\n제출 기한: {req.deadline}\n"
         f"작성 항목: {', '.join(fields)}\n주의사항: {'; '.join(req.cautions)}{ref_text}"
     )
-    content = chat([{"role": "user", "content": prompt}], temperature=0.2)
+    content = chat([{"role": "user", "content": prompt}], temperature=0.2) if prefer_llm else None
     data = _try_json(content)
     if data and data.get("guide_body"):
         return {
@@ -86,6 +89,8 @@ def create_request_mail(
     deadline: str | None,
     attachment_name: str,
     style_samples: list[dict] | None = None,
+    *,
+    prefer_llm: bool = True,
 ) -> dict:
     """작성자에게 보낼 취합 요청 메일 초안(제목/본문)을 생성한다.
 
@@ -98,7 +103,7 @@ def create_request_mail(
         f"수신자 수: {len(recipients)}명"
         f"{_build_style_hint(style_samples)}"
     )
-    content = chat([{"role": "user", "content": prompt}], temperature=0.3)
+    content = chat([{"role": "user", "content": prompt}], temperature=0.3) if prefer_llm else None
     data = _try_json(content)
     if data and data.get("mail_body"):
         return {"mail_subject": data.get("mail_subject", "취합 요청"), "mail_body": data["mail_body"]}
@@ -115,7 +120,8 @@ def create_request_mail(
 # ---------- 미제출자 리마인드 ----------
 
 def generate_reminder_message(
-    missing_list: list[dict], deadline: str | None, guide_summary: str = ""
+    missing_list: list[dict], deadline: str | None, guide_summary: str = "",
+    *, prefer_llm: bool = True,
 ) -> dict:
     """미제출자에게 보낼 재안내(리마인드) 문구를 생성한다."""
     names = ", ".join(m.get("name", "") for m in missing_list)
@@ -124,7 +130,7 @@ def generate_reminder_message(
         "JSON 으로만 응답: {reminder_mail_subject, reminder_mail_body}\n\n"
         f"제출 기한: {deadline}\n미제출자: {names}\n요약: {guide_summary}"
     )
-    content = chat([{"role": "user", "content": prompt}], temperature=0.3)
+    content = chat([{"role": "user", "content": prompt}], temperature=0.3) if prefer_llm else None
     data = _try_json(content)
     if data and data.get("reminder_mail_body"):
         return {

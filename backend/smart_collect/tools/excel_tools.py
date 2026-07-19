@@ -170,6 +170,33 @@ def validate_code_values(
     return errors
 
 
+def validate_number_format(
+    files: list[LoadedFile], number_columns: list[str]
+) -> list[ErrorDetail]:
+    """숫자 컬럼에 숫자로 변환할 수 없는 문자열이 들어간 경우를 검출한다."""
+    errors: list[ErrorDetail] = []
+    for f in files:
+        for col in number_columns:
+            if col not in f.df.columns:
+                continue
+            for idx, value in f.df[col].items():
+                if _is_blank(value):
+                    continue
+                text = str(value).strip().replace(",", "")
+                try:
+                    float(text)
+                except (TypeError, ValueError):
+                    errors.append(ErrorDetail(
+                        file=f.name,
+                        row=int(idx) + HEADER_OFFSET,
+                        column=col,
+                        error_type="숫자 형식 오류",
+                        value=str(value),
+                        detail="숫자로 입력해야 합니다.",
+                    ))
+    return errors
+
+
 def validate_duplicates(
     files: list[LoadedFile], duplicate_keys: list[str]
 ) -> list[ErrorDetail]:
@@ -215,6 +242,7 @@ def validate_excel_data(
     all_errors: list[ErrorDetail] = []
     all_errors += validate_required_fields(files, rules.required_columns)
     all_errors += validate_date_format(files, rules.date_columns)
+    all_errors += validate_number_format(files, rules.number_columns)
     all_errors += validate_code_values(files, rules.code_rules)
     all_errors += validate_duplicates(files, rules.duplicate_keys)
 

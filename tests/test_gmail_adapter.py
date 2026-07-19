@@ -25,6 +25,8 @@ _MSG = {
         "mimeType": "multipart/mixed",
         "headers": [
             {"name": "From", "value": "팀 리더 <lead@company.com>"},
+            {"name": "To", "value": "me@company.com"},
+            {"name": "Cc", "value": "영업 담당 <sales@company.com>, qa@company.com"},
             {"name": "Subject", "value": "[요청] 7월 시스템 개선 요청사항 취합"},
             {"name": "Date", "value": "Mon, 14 Jul 2025 09:00:00 +0900"},
         ],
@@ -70,6 +72,14 @@ class _Messages:
         assert format == "full"
         return _Exec(self._msgs[id])
 
+    def attachments(self):
+        return _Attachments()
+
+
+class _Attachments:
+    def get(self, userId, messageId, id):  # noqa: A002
+        return _Exec({"data": _b64("fake xlsx bytes")})
+
 
 class _Users:
     def __init__(self, m):
@@ -89,18 +99,22 @@ class _FakeService:
         return self._u
 
 
-def _adapter_with_fake():
-    ad = GmailReadAdapter(credentials_file="dummy", token_file="dummy")
+def _adapter_with_fake(attachment_dir=None):
+    ad = GmailReadAdapter(
+        credentials_file="dummy", token_file="dummy", attachment_dir=attachment_dir
+    )
     ad._service = lambda: _FakeService(_LISTING, {_MSG["id"]: _MSG})  # OAuth 우회
     return ad
 
 
-def test_list_new_reads_and_parses_real_shape():
-    msgs = _adapter_with_fake().list_new(max_results=5)
+def test_list_new_reads_and_parses_real_shape(tmp_path):
+    msgs = _adapter_with_fake(tmp_path).list_new(max_results=5)
     assert len(msgs) == 1
     m = msgs[0]
     assert m.id == "18f0a1b2c3d4e5f6"
     assert m.sender == "팀 리더 <lead@company.com>"
+    assert m.to == ["me@company.com"]
+    assert m.cc == ["영업 담당 <sales@company.com>", "qa@company.com"]
     assert m.subject == "[요청] 7월 시스템 개선 요청사항 취합"
     assert "부서명, 담당자, 긴급도" in m.body       # base64 본문 디코딩
     assert "html 버전" not in m.body                 # text/plain 만 취함
@@ -109,8 +123,34 @@ def test_list_new_reads_and_parses_real_shape():
     assert m.received_at.startswith("2025-07-1")     # internalDate → 날짜 변환
 
 
-def test_parsed_message_classifies_as_collection():
-    m = _adapter_with_fake().list_new()[0]
+def test_parsed_message_classifies_as_collection(tmp_path):
+    m = _adapter_with_fake(tmp_path).list_new()[0]
     result = classify_heuristic(m)
-    assert result.label == "취합요청"
+    assert result.label == "취합업무메일"
+    assert result.intent == "request"
     assert result.tier == "auto"  # 실제 형식 메일도 분류 경로가 동일하게 동작
+
+
+def test_real_shape_attachment_is_downloaded_for_resend(tmp_path):
+    message = _adapter_with_fake(tmp_path).list_new()[0]
+    assert len(message.attachment_paths) == 1
+    path = tmp_path / message.id / "개선요청_양식.xlsx"
+    assert path.exists()
+    assert path.read_bytes() == b"fake xlsx bytes"
+
+
+def test_html_only_message_is_converted_to_visible_text():
+    payload = {
+        "mimeType": "text/html",
+        "body": {
+            "data": _b64(
+                "<html><head><style>.x{display:none}</style></head>"
+                "<body><p>부서별 실적을 취합합니다.</p><div>7월 30일까지 회신 바랍니다.</div></body></html>"
+            )
+        },
+    }
+    body, attachments = GmailReadAdapter._extract_body_and_attachments(payload)
+    assert "부서별 실적을 취합합니다." in body
+    assert "7월 30일까지 회신 바랍니다." in body
+    assert "display:none" not in body
+    assert attachments == []

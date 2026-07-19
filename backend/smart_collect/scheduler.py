@@ -7,7 +7,8 @@
   - weekly   : 매주 지정 요일·시각 1회
 
 설계 원칙
-  - 자동 수집·분류·초안 생성까지만. **자동 발송은 하지 않는다**(사람 승인 유지).
+  - 자동 수집·분류·Worker 실행까지 수행한다. 발송은 LLM 제안만으로 실행하지 않고
+    AUTO_SEND_ENABLED, 허용 도메인, 첨부·근거 등 Policy Gate를 모두 통과해야 한다.
   - 스케줄 설정은 파일(data/schedule_config.json)에 저장해 재시작 후에도 유지.
   - APScheduler 미설치/오류 시에도 앱은 정상 동작(스케줄만 비활성).
 """
@@ -35,6 +36,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "last_run": None,
     "last_summary": None,
     "last_error": None,
+    "last_reason": None,
 }
 
 _scheduler = None            # APScheduler BackgroundScheduler (지연 생성)
@@ -123,28 +125,35 @@ def _get_scheduler():
 
 
 def _run_job(reason: str = "schedule") -> dict[str, Any]:
-    """수신함 수집·분류 1회 실행(스케줄/수동 공용). 자동 발송 없음."""
+    """수신함 수집·분류·Agent 실행 1회(스케줄/수동 공용)."""
     if not _lock.acquire(blocking=False):
         return {"skipped": "이미 실행 중"}
     try:
         from .inbox_pipeline import ingest_inbox
+        from .deadline_agent import run_deadline_agent
 
         result = ingest_inbox()
+        deadline_result = run_deadline_agent()
         summary = {
             "fetched": result["fetched"],
             "processed_new": result["processed_new"],
             "by_status": result["by_status"],
+            "by_category": result.get("by_category", {}),
+            "automation": result.get("automation", {}),
+            "deadline_agent": deadline_result,
         }
         cfg = load_config()
         cfg["last_run"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         cfg["last_summary"] = summary
         cfg["last_error"] = None
+        cfg["last_reason"] = reason
         save_config(cfg)
         return summary
     except Exception as exc:  # noqa: BLE001 - 잡 실패가 스케줄러를 죽이지 않도록
         cfg = load_config()
         cfg["last_run"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         cfg["last_error"] = str(exc)
+        cfg["last_reason"] = reason
         save_config(cfg)
         return {"error": str(exc)}
     finally:
@@ -192,8 +201,10 @@ def start() -> None:
         if not sched.running:
             sched.start()
         _register_jobs(cfg)
-    except Exception:  # noqa: BLE001 - apscheduler 미설치 등
-        pass
+    except Exception as exc:  # 앱은 살리되 UI에서 원인을 확인할 수 있게 기록
+        cfg = load_config()
+        cfg["last_error"] = f"scheduler_start_failed: {exc}"
+        save_config(cfg)
 
 
 def apply(incoming: dict[str, Any]) -> dict[str, Any]:
@@ -241,4 +252,5 @@ def status() -> dict[str, Any]:
         "last_run": cfg.get("last_run"),
         "last_summary": cfg.get("last_summary"),
         "last_error": cfg.get("last_error"),
+        "last_reason": cfg.get("last_reason"),
     }

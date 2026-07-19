@@ -66,6 +66,23 @@ class Settings:
     )
     gmail_sender: str = os.getenv("GMAIL_SENDER", "")
 
+    # 조직도 원천. 비워두면 시연용 내장 디렉터리를 사용한다. 운영에서는
+    # name,dept,email 열을 가진 UTF-8 CSV 또는 동일 키의 JSON 배열을 지정한다.
+    directory_file: str = os.getenv("DIRECTORY_FILE", "")
+
+    # Autonomous inbox actions.  실제 외부 발송은 세 조건을 모두 만족해야 한다:
+    # AUTO_SEND_ENABLED=true + EMAIL_SEND_MODE=gmail + 허용 도메인 일치.
+    auto_send_enabled: bool = _as_bool(os.getenv("AUTO_SEND_ENABLED"), default=False)
+    auto_send_min_confidence: float = float(
+        os.getenv("AUTO_SEND_MIN_CONFIDENCE", "0.90")
+    )
+    auto_send_allowed_domains: tuple[str, ...] = tuple(
+        d.strip().lower()
+        for d in os.getenv("AUTO_SEND_ALLOWED_DOMAINS", "").split(",")
+        if d.strip()
+    )
+    reminder_window_hours: int = int(os.getenv("REMINDER_WINDOW_HOURS", "24"))
+
     @property
     def gmail_read_ready(self) -> bool:
         """실제 Gmail 수신함 읽기 가능 여부(모드=gmail + credentials 존재)."""

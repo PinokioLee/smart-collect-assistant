@@ -13,8 +13,8 @@
     "recall_mean": 1.0,
     "f1_mean": 1.0,
     "f1_stdev": 0.0,
-    "time_mean_ms": 3664.6,
-    "time_stdev_ms": 195.9,
+    "time_mean_ms": 3933.7,
+    "time_stdev_ms": 84.3,
     "per_run_detected_counts": [
       26,
       26,
@@ -41,8 +41,8 @@
       "runs": 10,
       "error_count_mean": 26,
       "error_count_stdev": 0.0,
-      "time_mean_ms": 21.05,
-      "time_stdev_ms": 0.786
+      "time_mean_ms": 21.12,
+      "time_stdev_ms": 4.145
     }
   }
 }

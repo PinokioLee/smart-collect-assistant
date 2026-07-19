@@ -224,6 +224,40 @@ def verify_grounding(
     return GroundingReport(checks=checks, flags=flags, score=score)
 
 
+def verify_generated_draft(
+    draft_body: str,
+    req: ExtractedRequirements,
+    attachment_name: str,
+    retrieved: list[dict] | list[RefDoc],
+) -> dict:
+    """생성 후 실제 메일 본문이 입력 근거를 빠뜨리거나 바꾸지 않았는지 검사한다."""
+    body = draft_body or ""
+    checks: list[dict] = []
+
+    def add(item: str, grounded: bool, source: str) -> None:
+        checks.append({"item": item, "grounded": grounded, "source": source if grounded else ""})
+
+    if not req.required_fields:
+        add("작성 항목", False, "")
+    for field in req.required_fields:
+        add(f"작성항목:{field}", field in body, "수신 메일 본문")
+    if req.deadline:
+        # LLM이 시간 표기를 약간 바꿔도 날짜 핵심은 유지되어야 한다.
+        date_token = req.deadline[:10]
+        add("제출 기한", date_token in body or req.deadline in body, "수신 메일 본문")
+    add("첨부 양식", bool(attachment_name and attachment_name in body), "선택/생성된 양식")
+    if retrieved:
+        first = retrieved[0]
+        title = first.title if isinstance(first, RefDoc) else str(first.get("title") or "검색 근거")
+        add("참고 근거", True, title)
+    flags = [c["item"] for c in checks if not c["grounded"]]
+    score = sum(1 for c in checks if c["grounded"]) / len(checks) if checks else 0.0
+    return {
+        "checks": checks, "flags": flags, "score": round(score, 2),
+        "claim_sources": {c["item"]: c["source"] for c in checks if c["grounded"]},
+    }
+
+
 def build_rag_context(
     req: ExtractedRequirements,
     recipients: list[dict],

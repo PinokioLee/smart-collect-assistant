@@ -27,6 +27,7 @@ class ValidationRule(BaseModel):
 
     required_columns: list[str] = Field(default_factory=list)
     date_columns: list[str] = Field(default_factory=list)
+    number_columns: list[str] = Field(default_factory=list)
     # 컬럼명 -> 허용값 목록 (예: {"긴급도": ["상", "중", "하"]})
     code_rules: dict[str, list[str]] = Field(default_factory=dict)
     duplicate_keys: list[str] = Field(default_factory=list)

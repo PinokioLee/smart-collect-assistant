@@ -1,0 +1,4 @@
+run,participant,scenario_count,active_minutes,measured_at,notes
+1,,12,,,파일 열기·검증·반려메일 작성의 실제 능동 작업시간
+2,,12,,,동일 시나리오 반복 측정
+3,,12,,,가능하면 다른 참여자로 측정

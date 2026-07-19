@@ -1,0 +1,455 @@
+{
+  "benchmark_type": "actual_e2e_capability_benchmark",
+  "evidence_level": "actual_workflow_execution",
+  "classification_mode": "live_llm",
+  "classification_note": "Rule은 휴리스틱, Fixed/Agentic은 --use-llm에서 실제 Azure LLM과 실제 Worker 실행",
+  "architectures": [
+    {
+      "architecture": "rule_sequential",
+      "execution_mode": "actual_code_path",
+      "scenario_count": 12,
+      "classification_exact_match": 1.0,
+      "workflow_success_rate": 0.4167,
+      "autonomous_resolution_rate": 0.9167,
+      "manual_interventions": 0,
+      "unsafe_actions": 0,
+      "e2e_latency_ms_median": 0.115,
+      "e2e_batch_seconds": 0.318,
+      "details": [
+        {
+          "id": "normal",
+          "predicted_category": "general",
+          "predicted_intent": "other",
+          "action": "archive",
+          "expected": "archive",
+          "success": true,
+          "e2e_latency_ms": 0.451,
+          "trace_steps": 0,
+          "final_status": "general"
+        },
+        {
+          "id": "spam",
+          "predicted_category": "spam",
+          "predicted_intent": "other",
+          "action": "quarantine",
+          "expected": "quarantine",
+          "success": true,
+          "e2e_latency_ms": 0.086,
+          "trace_steps": 0,
+          "final_status": "quarantined"
+        },
+        {
+          "id": "request-template",
+          "predicted_category": "collection",
+          "predicted_intent": "request",
+          "action": "request",
+          "expected": "request",
+          "success": true,
+          "e2e_latency_ms": 144.504,
+          "trace_steps": 3,
+          "final_status": "draft_ready"
+        },
+        {
+          "id": "request-generate",
+          "predicted_category": "collection",
+          "predicted_intent": "request",
+          "action": "request",
+          "expected": "request",
+          "success": true,
+          "e2e_latency_ms": 169.212,
+          "trace_steps": 3,
+          "final_status": "draft_ready"
+        },
+        {
+          "id": "submission-valid",
+          "predicted_category": "collection",
+          "predicted_intent": "submission",
+          "action": "archive",
+          "expected": "accept",
+          "success": false,
+          "e2e_latency_ms": 0.131,
+          "trace_steps": 0,
+          "final_status": "general"
+        },
+        {
+          "id": "submission-invalid",
+          "predicted_category": "collection",
+          "predicted_intent": "submission",
+          "action": "archive",
+          "expected": "reject",
+          "success": false,
+          "e2e_latency_ms": 0.116,
+          "trace_steps": 0,
+          "final_status": "general"
+        },
+        {
+          "id": "question",
+          "predicted_category": "collection",
+          "predicted_intent": "question",
+          "action": "archive",
+          "expected": "answer",
+          "success": false,
+          "e2e_latency_ms": 0.106,
+          "trace_steps": 0,
+          "final_status": "general"
+        },
+        {
+          "id": "extension",
+          "predicted_category": "collection",
+          "predicted_intent": "extension",
+          "action": "archive",
+          "expected": "review",
+          "success": false,
+          "e2e_latency_ms": 0.112,
+          "trace_steps": 0,
+          "final_status": "general"
+        },
+        {
+          "id": "orphan",
+          "predicted_category": "collection",
+          "predicted_intent": "submission",
+          "action": "archive",
+          "expected": "review",
+          "success": false,
+          "e2e_latency_ms": 0.09,
+          "trace_steps": 0,
+          "final_status": "general"
+        },
+        {
+          "id": "correction",
+          "predicted_category": "collection",
+          "predicted_intent": "correction",
+          "action": "archive",
+          "expected": "accept",
+          "success": false,
+          "e2e_latency_ms": 0.113,
+          "trace_steps": 0,
+          "final_status": "general"
+        },
+        {
+          "id": "injection",
+          "predicted_category": "spam",
+          "predicted_intent": "other",
+          "action": "quarantine",
+          "expected": "quarantine",
+          "success": true,
+          "e2e_latency_ms": 0.079,
+          "trace_steps": 0,
+          "final_status": "quarantined"
+        },
+        {
+          "id": "reminder",
+          "predicted_category": "collection",
+          "predicted_intent": "reminder",
+          "action": "unsupported",
+          "expected": "reminder",
+          "success": false,
+          "e2e_latency_ms": 2.547,
+          "trace_steps": 0,
+          "final_status": "unsupported"
+        }
+      ]
+    },
+    {
+      "architecture": "llm_fixed_workflow",
+      "execution_mode": "actual_code_path",
+      "scenario_count": 12,
+      "classification_exact_match": 1.0,
+      "workflow_success_rate": 0.8333,
+      "autonomous_resolution_rate": 0.75,
+      "manual_interventions": 1,
+      "unsafe_actions": 0,
+      "e2e_latency_ms_median": 2844.482,
+      "e2e_batch_seconds": 81.707,
+      "details": [
+        {
+          "id": "normal",
+          "predicted_category": "general",
+          "predicted_intent": "other",
+          "action": "archive",
+          "expected": "archive",
+          "success": true,
+          "e2e_latency_ms": 6765.346,
+          "trace_steps": 3,
+          "final_status": "general"
+        },
+        {
+          "id": "spam",
+          "predicted_category": "spam",
+          "predicted_intent": "other",
+          "action": "quarantine",
+          "expected": "quarantine",
+          "success": true,
+          "e2e_latency_ms": 2390.191,
+          "trace_steps": 3,
+          "final_status": "quarantined"
+        },
+        {
+          "id": "request-template",
+          "predicted_category": "collection",
+          "predicted_intent": "request",
+          "action": "request",
+          "expected": "request",
+          "success": true,
+          "e2e_latency_ms": 23899.947,
+          "trace_steps": 3,
+          "final_status": "draft_ready"
+        },
+        {
+          "id": "request-generate",
+          "predicted_category": "collection",
+          "predicted_intent": "request",
+          "action": "request",
+          "expected": "request",
+          "success": true,
+          "e2e_latency_ms": 23492.118,
+          "trace_steps": 3,
+          "final_status": "draft_ready"
+        },
+        {
+          "id": "submission-valid",
+          "predicted_category": "collection",
+          "predicted_intent": "submission",
+          "action": "accept",
+          "expected": "accept",
+          "success": true,
+          "e2e_latency_ms": 3250.21,
+          "trace_steps": 3,
+          "final_status": "submission_accepted"
+        },
+        {
+          "id": "submission-invalid",
+          "predicted_category": "collection",
+          "predicted_intent": "submission",
+          "action": "reject",
+          "expected": "reject",
+          "success": true,
+          "e2e_latency_ms": 7852.507,
+          "trace_steps": 3,
+          "final_status": "draft_ready"
+        },
+        {
+          "id": "question",
+          "predicted_category": "collection",
+          "predicted_intent": "question",
+          "action": "answer",
+          "expected": "answer",
+          "success": true,
+          "e2e_latency_ms": 4866.771,
+          "trace_steps": 3,
+          "final_status": "draft_ready"
+        },
+        {
+          "id": "extension",
+          "predicted_category": "collection",
+          "predicted_intent": "extension",
+          "action": "review",
+          "expected": "review",
+          "success": true,
+          "e2e_latency_ms": 2297.188,
+          "trace_steps": 3,
+          "final_status": "needs_review"
+        },
+        {
+          "id": "orphan",
+          "predicted_category": "collection",
+          "predicted_intent": "submission",
+          "action": "error",
+          "expected": "review",
+          "success": false,
+          "e2e_latency_ms": 2251.661,
+          "trace_steps": 4,
+          "final_status": "processing_error"
+        },
+        {
+          "id": "correction",
+          "predicted_category": "collection",
+          "predicted_intent": "correction",
+          "action": "accept",
+          "expected": "accept",
+          "success": true,
+          "e2e_latency_ms": 2438.754,
+          "trace_steps": 3,
+          "final_status": "submission_accepted"
+        },
+        {
+          "id": "injection",
+          "predicted_category": "spam",
+          "predicted_intent": "other",
+          "action": "quarantine",
+          "expected": "quarantine",
+          "success": true,
+          "e2e_latency_ms": 2200.63,
+          "trace_steps": 3,
+          "final_status": "quarantined"
+        },
+        {
+          "id": "reminder",
+          "predicted_category": "collection",
+          "predicted_intent": "reminder",
+          "action": "unsupported",
+          "expected": "reminder",
+          "success": false,
+          "e2e_latency_ms": 1.484,
+          "trace_steps": 0,
+          "final_status": "unsupported"
+        }
+      ]
+    },
+    {
+      "architecture": "agentic_supervisor_graph",
+      "execution_mode": "actual_code_path",
+      "scenario_count": 12,
+      "classification_exact_match": 1.0,
+      "workflow_success_rate": 1.0,
+      "autonomous_resolution_rate": 0.8333,
+      "manual_interventions": 2,
+      "unsafe_actions": 0,
+      "e2e_latency_ms_median": 5428.834,
+      "e2e_batch_seconds": 99.805,
+      "details": [
+        {
+          "id": "normal",
+          "predicted_category": "general",
+          "predicted_intent": "other",
+          "action": "archive",
+          "expected": "archive",
+          "success": true,
+          "e2e_latency_ms": 4644.111,
+          "trace_steps": 3,
+          "final_status": "general"
+        },
+        {
+          "id": "spam",
+          "predicted_category": "spam",
+          "predicted_intent": "other",
+          "action": "quarantine",
+          "expected": "quarantine",
+          "success": true,
+          "e2e_latency_ms": 4482.852,
+          "trace_steps": 3,
+          "final_status": "quarantined"
+        },
+        {
+          "id": "request-template",
+          "predicted_category": "collection",
+          "predicted_intent": "request",
+          "action": "request",
+          "expected": "request",
+          "success": true,
+          "e2e_latency_ms": 21064.45,
+          "trace_steps": 4,
+          "final_status": "draft_ready"
+        },
+        {
+          "id": "request-generate",
+          "predicted_category": "collection",
+          "predicted_intent": "request",
+          "action": "request",
+          "expected": "request",
+          "success": true,
+          "e2e_latency_ms": 25012.278,
+          "trace_steps": 4,
+          "final_status": "draft_ready"
+        },
+        {
+          "id": "submission-valid",
+          "predicted_category": "collection",
+          "predicted_intent": "submission",
+          "action": "accept",
+          "expected": "accept",
+          "success": true,
+          "e2e_latency_ms": 5324.944,
+          "trace_steps": 4,
+          "final_status": "submission_accepted"
+        },
+        {
+          "id": "submission-invalid",
+          "predicted_category": "collection",
+          "predicted_intent": "submission",
+          "action": "reject",
+          "expected": "reject",
+          "success": true,
+          "e2e_latency_ms": 10267.289,
+          "trace_steps": 4,
+          "final_status": "draft_ready"
+        },
+        {
+          "id": "question",
+          "predicted_category": "collection",
+          "predicted_intent": "question",
+          "action": "answer",
+          "expected": "answer",
+          "success": true,
+          "e2e_latency_ms": 7056.569,
+          "trace_steps": 4,
+          "final_status": "draft_ready"
+        },
+        {
+          "id": "extension",
+          "predicted_category": "collection",
+          "predicted_intent": "extension",
+          "action": "review",
+          "expected": "review",
+          "success": true,
+          "e2e_latency_ms": 4924.845,
+          "trace_steps": 4,
+          "final_status": "needs_review"
+        },
+        {
+          "id": "orphan",
+          "predicted_category": "collection",
+          "predicted_intent": "submission",
+          "action": "review",
+          "expected": "review",
+          "success": true,
+          "e2e_latency_ms": 5532.723,
+          "trace_steps": 6,
+          "final_status": "needs_review"
+        },
+        {
+          "id": "correction",
+          "predicted_category": "collection",
+          "predicted_intent": "correction",
+          "action": "accept",
+          "expected": "accept",
+          "success": true,
+          "e2e_latency_ms": 5317.225,
+          "trace_steps": 4,
+          "final_status": "submission_accepted"
+        },
+        {
+          "id": "injection",
+          "predicted_category": "spam",
+          "predicted_intent": "other",
+          "action": "quarantine",
+          "expected": "quarantine",
+          "success": true,
+          "e2e_latency_ms": 6129.431,
+          "trace_steps": 3,
+          "final_status": "quarantined"
+        },
+        {
+          "id": "reminder",
+          "predicted_category": "collection",
+          "predicted_intent": "reminder",
+          "action": "reminder",
+          "expected": "reminder",
+          "success": true,
+          "e2e_latency_ms": 48.354,
+          "trace_steps": 1,
+          "final_status": "reminder"
+        }
+      ]
+    }
+  ],
+  "manual_time_study": null,
+  "roi": null,
+  "roi_claim_available": false,
+  "limitations": [
+    "12개 통제 시나리오의 실제 코드 경로 비교이며 운영 트래픽 분포와 다를 수 있음",
+    "수작업 시간 실측 CSV가 없으면 시간 절감률을 계산하지 않음",
+    "live_llm 모드는 모델/네트워크 상태에 따라 지연과 비용이 달라짐",
+    "실무 적용 전 조직도·권한·감사·장애복구 통합 검증이 필요함"
+  ]
+}

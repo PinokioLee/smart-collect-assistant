@@ -1,0 +1,267 @@
+"""이벤트 기반 Supervisor + Worker Agent의 대표 업무 시나리오."""
+
+from datetime import datetime, timedelta
+from pathlib import Path
+
+import pandas as pd
+
+from smart_collect import autonomous_graph, inbox_pipeline, job_store
+from smart_collect.deadline_agent import run_deadline_agent
+from smart_collect.state import ColumnSpec, ExtractedRequirements, TemplateSpec
+from smart_collect.tools import advanced_rag
+from smart_collect.tools.inbox_tools import InboxMessage
+from smart_collect.tools.mail_classifier import ClassificationResult
+
+
+def _cls(category, intent="other", confidence=0.98, tier="auto"):
+    return ClassificationResult(
+        category=category, intent=intent, confidence=confidence,
+        tier=tier, source="test",
+    )
+
+
+def _message(mid, subject, body="", attachments=None, paths=None, sender="user@company.com"):
+    return InboxMessage(
+        id=mid, sender=sender, subject=subject, body=body,
+        attachments=attachments or [], attachment_paths=paths or [],
+        received_at="2026-07-19 10:00",
+    )
+
+
+def _xlsx(path: Path, rows):
+    pd.DataFrame(rows, columns=["부서명", "담당자", "금액"]).to_excel(path, index=False)
+    return str(path)
+
+
+def _job(db, tmp_path, *, job_id="SC-JOB", recipients=None, deadline="2026-07-20 17:00"):
+    template = tmp_path / f"{job_id}_template.xlsx"
+    _xlsx(template, [])
+    return job_store.create_job({
+        "job_id": job_id, "title": "월간 실적 취합", "deadline": deadline,
+        "recipients": recipients or [{"name": "사용자", "dept": "영업", "email": "user@company.com"}],
+        "required_fields": ["부서명", "담당자", "금액"],
+        "validation_rule": {
+            "required_columns": ["부서명", "담당자", "금액"],
+            "number_columns": ["금액"], "date_columns": [], "code_rules": {}, "duplicate_keys": [],
+        },
+        "template_path": str(template), "status": "collecting",
+    }, db)
+
+
+def test_01_general_mail_is_archived(tmp_path, monkeypatch):
+    monkeypatch.setattr(autonomous_graph, "classify_message", lambda *a, **k: _cls("general", tier="general"))
+    record = autonomous_graph.run_mail_event(_message("GEN", "사내 공지"), db_path=tmp_path / "db.sqlite", prefer_llm=False)
+    assert record["status"] == "general"
+    assert record["artifacts"]["agent_trace"][-1]["agent"] == "General Mail Agent"
+
+
+def test_02_spam_and_prompt_injection_are_quarantined(tmp_path, monkeypatch):
+    monkeypatch.setattr(autonomous_graph, "classify_message", lambda *a, **k: ClassificationResult(
+        category="spam", confidence=0.99, tier="quarantine", risk_flags=["prompt_injection"]
+    ))
+    record = autonomous_graph.run_mail_event(_message("SPAM", "광고"), db_path=tmp_path / "db.sqlite", prefer_llm=False)
+    assert record["status"] == "quarantined"
+
+
+def test_03_request_creates_job_template_and_draft(tmp_path, monkeypatch):
+    db = tmp_path / "db.sqlite"
+    monkeypatch.setattr(autonomous_graph, "classify_message", lambda *a, **k: _cls("collection", "request"))
+    req = ExtractedRequirements(
+        request_title="월간 실적", deadline="2026-07-30 17:00",
+        required_fields=["부서명", "담당자", "금액"],
+    )
+    spec = TemplateSpec(title="월간 실적", columns=[
+        ColumnSpec(name="부서명", required=True), ColumnSpec(name="담당자", required=True),
+        ColumnSpec(name="금액", dtype="number", required=True),
+    ])
+    generated = tmp_path / "generated.xlsx"
+    _xlsx(generated, [])
+    monkeypatch.setattr(inbox_pipeline, "analyze_collection_email", lambda *a, **k: req)
+    monkeypatch.setattr(inbox_pipeline, "design_template_from_intent", lambda *a, **k: spec)
+    monkeypatch.setattr(inbox_pipeline, "build_and_save_template", lambda s: {
+        "template_id": "TPL-REQ", "filename": "generated.xlsx", "excel_path": str(generated),
+        "download": "/api/download-template/TPL-REQ",
+        "validation_rule": {"required_columns": ["부서명", "담당자", "금액"], "number_columns": ["금액"]},
+    })
+    monkeypatch.setattr(advanced_rag, "build_rag_context", lambda *a, **k: {
+        "grounding": {"flags": [], "score": 1.0}, "sources": [], "retrieved": [],
+    })
+    record = autonomous_graph.run_mail_event(
+        _message("REQ-1", "[취합 요청] 월간 실적", "금액을 7월 30일까지 작성 요청합니다."),
+        db_path=db, prefer_llm=False,
+    )
+    assert record["status"] == "draft_ready"
+    assert record["artifacts"]["job_id"] == "SC-REQ-1"
+    assert job_store.get_job("SC-REQ-1", db)["status"] == "awaiting_approval"
+
+
+def test_04_valid_submission_is_accepted(tmp_path, monkeypatch):
+    db = tmp_path / "db.sqlite"
+    _job(db, tmp_path)
+    monkeypatch.setattr(autonomous_graph, "DATA_DIR", tmp_path)
+    path = _xlsx(tmp_path / "valid.xlsx", [["영업", "홍길동", "1000"]])
+    monkeypatch.setattr(autonomous_graph, "classify_message", lambda *a, **k: _cls("collection", "submission"))
+    record = autonomous_graph.run_mail_event(
+        _message("SUB-OK", "[SC-JOB] 제출합니다", attachments=["valid.xlsx"], paths=[path]),
+        db_path=db, prefer_llm=False,
+    )
+    assert record["status"] == "submission_accepted"
+    assert job_store.list_submissions("SC-JOB", db)[0]["status"] == "accepted"
+
+
+def test_05_invalid_submission_creates_rejection_mail(tmp_path, monkeypatch):
+    db = tmp_path / "db.sqlite"
+    _job(db, tmp_path)
+    path = _xlsx(tmp_path / "invalid.xlsx", [["영업", "", "not-number"]])
+    monkeypatch.setattr(autonomous_graph, "classify_message", lambda *a, **k: _cls("collection", "submission"))
+    record = autonomous_graph.run_mail_event(
+        _message("SUB-BAD", "[SC-JOB] 제출합니다", attachments=["invalid.xlsx"], paths=[path]),
+        db_path=db, prefer_llm=False,
+    )
+    assert record["status"] == "draft_ready"
+    types = {e["error_type"] for e in record["artifacts"]["validation_errors"]}
+    assert {"필수값 누락", "숫자 형식 오류"} <= types
+    assert "수정 요청" in record["draft_subject"]
+
+
+def test_06_corrected_resubmission_is_revalidated(tmp_path, monkeypatch):
+    db = tmp_path / "db.sqlite"
+    _job(db, tmp_path)
+    monkeypatch.setattr(autonomous_graph, "DATA_DIR", tmp_path)
+    bad = _xlsx(tmp_path / "bad.xlsx", [["영업", "", "x"]])
+    good = _xlsx(tmp_path / "good.xlsx", [["영업", "홍길동", "1200"]])
+    monkeypatch.setattr(autonomous_graph, "classify_message", lambda msg, **k: _cls(
+        "collection", "correction" if msg.id == "CORRECT" else "submission"
+    ))
+    autonomous_graph.run_mail_event(
+        _message("FIRST", "[SC-JOB] 제출", attachments=["bad.xlsx"], paths=[bad]),
+        db_path=db, prefer_llm=False,
+    )
+    corrected = autonomous_graph.run_mail_event(
+        _message("CORRECT", "[SC-JOB] 수정본 재제출", attachments=["good.xlsx"], paths=[good]),
+        db_path=db, prefer_llm=False,
+    )
+    assert corrected["status"] == "submission_accepted"
+    assert {s["status"] for s in job_store.list_submissions("SC-JOB", db)} == {"rejected", "accepted"}
+
+
+def test_07_question_is_grounded_and_waits_for_approval_offline(tmp_path, monkeypatch):
+    db = tmp_path / "db.sqlite"
+    _job(db, tmp_path)
+    monkeypatch.setattr(autonomous_graph, "classify_message", lambda *a, **k: _cls("collection", "question"))
+    record = autonomous_graph.run_mail_event(
+        _message("Q-1", "[SC-JOB] 작성 문의", "마감이 언제인가요?"),
+        db_path=db, prefer_llm=False,
+    )
+    assert record["status"] == "draft_ready"
+    assert "2026-07-20" in record["draft_body"]
+    assert record["decision"]["action"] == "review"
+
+
+def test_08_deadline_extension_always_requires_approval(tmp_path, monkeypatch):
+    db = tmp_path / "db.sqlite"
+    _job(db, tmp_path)
+    monkeypatch.setattr(autonomous_graph, "classify_message", lambda *a, **k: _cls("collection", "extension"))
+    record = autonomous_graph.run_mail_event(
+        _message("EXT", "[SC-JOB] 기한 연장 요청", "하루 연장 가능할까요?"),
+        db_path=db, prefer_llm=False,
+    )
+    assert record["status"] == "needs_review"
+    assert "policy_exception" in record["decision"]["risk_flags"]
+
+
+def test_09_worker_failure_is_observed_and_replanned(tmp_path, monkeypatch):
+    monkeypatch.setattr(autonomous_graph, "classify_message", lambda *a, **k: _cls("collection", "submission"))
+    record = autonomous_graph.run_mail_event(
+        _message("ORPHAN", "출처 불명 제출", attachments=["x.xlsx"]),
+        db_path=tmp_path / "db.sqlite", prefer_llm=False,
+    )
+    assert record["status"] == "needs_review"
+    actions = [a["action"] for a in record["artifacts"]["agent_trace"]]
+    assert "observe_worker_result" in actions
+    assert "handoff_to_human" in actions
+
+
+def test_10_deadline_tick_drafts_reminder_for_missing_submitter(tmp_path):
+    db = tmp_path / "db.sqlite"
+    now = datetime(2026, 7, 19, 10, 0)
+    _job(db, tmp_path, deadline=(now + timedelta(hours=2)).strftime("%Y-%m-%d %H:%M"))
+    result = run_deadline_agent(
+        now=now, db_path=db, prefer_llm=False, auto_send_enabled=False,
+    )
+    assert result["drafted"] == 1
+    assert result["details"][0]["missing"] == 1
+
+
+def test_11_all_valid_submissions_trigger_merge(tmp_path, monkeypatch):
+    db = tmp_path / "db.sqlite"
+    _job(db, tmp_path, job_id="SC-MERGE")
+    monkeypatch.setattr(autonomous_graph, "DATA_DIR", tmp_path)
+    path = _xlsx(tmp_path / "merge.xlsx", [["영업", "홍길동", "1000"]])
+    monkeypatch.setattr(autonomous_graph, "classify_message", lambda *a, **k: _cls("collection", "submission"))
+    record = autonomous_graph.run_mail_event(
+        _message("MERGE", "[SC-MERGE] 제출합니다", attachments=["merge.xlsx"], paths=[path]),
+        db_path=db, prefer_llm=False,
+    )
+    assert Path(record["artifacts"]["merged_file"]).exists()
+    assert job_store.get_job("SC-MERGE", db)["status"] == "completed"
+
+
+def test_12_transient_worker_failure_retries_once_then_succeeds(tmp_path, monkeypatch):
+    db = tmp_path / "db.sqlite"
+    monkeypatch.setattr(autonomous_graph, "classify_message", lambda *a, **k: _cls("collection", "submission"))
+    calls = {"count": 0}
+
+    def flaky_worker(state):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return {
+                "outcome": "failure",
+                "observation": {"error": "temporary service timeout"},
+                "terminal": False,
+            }
+        return {
+            "record": autonomous_graph._base_record(state, "submission_accepted"),
+            "outcome": "success",
+            "terminal": True,
+        }
+
+    monkeypatch.setattr(autonomous_graph, "_submission_worker", flaky_worker)
+    record = autonomous_graph.run_mail_event(
+        _message("TRANSIENT", "[SC-JOB] 제출", attachments=["retry.xlsx"]),
+        db_path=db,
+        prefer_llm=False,
+    )
+    actions = job_store.list_actions("TRANSIENT", db)
+    assert calls["count"] == 2
+    assert record["status"] == "submission_accepted"
+    assert any(a["action"] == "observe_worker_result" and a["outcome"] == "retry" for a in actions)
+    assert sum(a["action"] == "select_next_action" for a in actions) == 2
+
+
+def test_13_supervisor_considers_all_collection_capabilities():
+    routes = autonomous_graph._allowed_routes(_cls("collection", "question"))
+    assert routes == [
+        "request_worker", "submission_worker", "qa_worker",
+        "extension_worker", "human_review",
+    ]
+
+
+def test_14_policy_gate_blocks_incompatible_llm_route(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        autonomous_graph, "classify_message",
+        lambda *a, **k: _cls("collection", "question"),
+    )
+    monkeypatch.setattr(
+        autonomous_graph, "_llm_route",
+        lambda state, allowed: ("submission_worker", "첨부를 검증하겠음"),
+    )
+    record = autonomous_graph.run_mail_event(
+        _message("ROUTE-GATE", "작성 문의", "마감이 언제인가요?"),
+        db_path=tmp_path / "db.sqlite", prefer_llm=True,
+    )
+    assert record["status"] == "needs_review"
+    actions = job_store.list_actions("ROUTE-GATE", tmp_path / "db.sqlite")
+    decision = next(a for a in actions if a["action"] == "select_next_action")
+    assert decision["detail"]["route"] == "human_review"
+    assert "route_intent_mismatch" in decision["detail"]["reason"]

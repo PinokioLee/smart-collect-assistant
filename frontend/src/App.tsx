@@ -8,10 +8,12 @@ import {
   inboxIngest,
   inboxQueue,
   inboxSend,
+  getAgentJobs,
   getSchedule,
   setSchedule,
   scheduleRunNow,
   type IngestResult,
+  type CollectionJob,
   type ScheduleStatus,
   getHealth,
   getSampleEmail,
@@ -84,6 +86,7 @@ export default function App() {
   const [inbox, setInbox] = useState<IngestResult | null>(null);
   const [inboxMsg, setInboxMsg] = useState("");
   const [sendingId, setSendingId] = useState<string | null>(null);
+  const [collectionJobs, setCollectionJobs] = useState<CollectionJob[]>([]);
 
   // 5-b. 자동 수집 스케줄
   const [sched, setSched] = useState<ScheduleStatus | null>(null);
@@ -107,6 +110,15 @@ export default function App() {
 
   useEffect(() => {
     getSchedule().then(applyStatus).catch(() => {});
+    getAgentJobs().then((r) => setCollectionJobs(r.jobs)).catch(() => {});
+    inboxQueue().then((q) => setInbox({
+      fetched: 0,
+      processed_new: 0,
+      skipped: 0,
+      by_status: q.counts,
+      queue: q.queue,
+      read_mode: q.read_mode,
+    })).catch(() => {});
   }, []);
 
   async function saveSchedule() {
@@ -144,6 +156,7 @@ export default function App() {
         queue: q.queue,
         read_mode: q.read_mode,
       });
+      setCollectionJobs((await getAgentJobs()).jobs);
     } catch (e: any) {
       setError(e?.response?.data?.detail ?? String(e));
     } finally {
@@ -318,6 +331,7 @@ export default function App() {
     try {
       const r = await inboxIngest(true);
       setInbox(r);
+      setCollectionJobs((await getAgentJobs()).jobs);
     } catch (e: any) {
       setError(e?.response?.data?.detail ?? String(e));
     } finally {
@@ -332,6 +346,7 @@ export default function App() {
       await inboxSend(id);
       const q = await inboxQueue();
       setInbox((prev) => (prev ? { ...prev, queue: q.queue, by_status: q.counts } : prev));
+      setCollectionJobs((await getAgentJobs()).jobs);
       setInboxMsg("초안을 승인하여 발송했습니다 (기본 mock 발송).");
     } catch (e: any) {
       setError(e?.response?.data?.detail ?? String(e));
@@ -465,6 +480,8 @@ export default function App() {
             <Pill on={health.use_rag} label="RAG" />
             <Pill on={health.use_langfuse} label="Langfuse" />
             <Pill on={health.email_send_mode === "gmail"} label={`Email ${health.email_send_mode}`} />
+            <Pill on={health.gmail_read_ready} label="Gmail 수신" />
+            <Pill on={health.auto_send_enabled} label={`자동발송 ${health.auto_send_enabled ? "ON" : "OFF"}`} />
           </div>
         )}
       </header>
@@ -931,6 +948,25 @@ export default function App() {
                     <Stat label="신규" value={inbox.processed_new} />
                     <Stat label="초안" value={inbox.by_status.draft_ready ?? 0} tone="ok" />
                     <Stat label="확인필요" value={inbox.by_status.needs_review ?? 0} tone={(inbox.by_status.needs_review ?? 0) ? "bad" : "ok"} />
+                    <Stat label="자동/승인 발송" value={inbox.automation?.sent ?? inbox.by_status.sent ?? 0} tone="ok" />
+                    <Stat label="격리" value={inbox.automation?.quarantined ?? inbox.by_status.quarantined ?? 0} tone={(inbox.by_status.quarantined ?? 0) ? "bad" : "ok"} />
+                  </div>
+                )}
+                {collectionJobs.length > 0 && (
+                  <div className="block">
+                    <h4>Collection Job</h4>
+                    <div className="inbox-queue">
+                      {collectionJobs.slice(0, 5).map((job) => (
+                        <div className="inbox-item" key={job.job_id}>
+                          <div className="inbox-top">
+                            <span className="ibadge cls">{job.job_id}</span>
+                            <span className={`ibadge ${job.status === "completed" ? "ok" : "warn"}`}>{job.status}</span>
+                          </div>
+                          <p className="isubject">{job.title}</p>
+                          <p className="field-line"><b>마감</b> · {job.deadline || "확인 필요"} · <b>대상</b> {job.recipients.length}명</p>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
                 {inboxMsg && <p className="hint">✓ {inboxMsg}</p>}
@@ -942,13 +978,14 @@ export default function App() {
                   {inbox ? (
                     <div className="result inbox-queue">
                       {inbox.queue.map((item) => {
-                        const tierClass = item.status === "draft_ready" ? "ok" : item.status === "needs_review" ? "warn" : item.status === "sent" ? "sent" : "muted";
-                        const label = { draft_ready: "초안 생성", needs_review: "확인 필요", general: "일반", sent: "발송됨", error: "오류" }[item.status] ?? item.status;
+                        const tierClass = item.status === "draft_ready" || item.status === "submission_accepted" ? "ok" : item.status === "needs_review" || item.status === "quarantined" ? "warn" : item.status === "sent" ? "sent" : "muted";
+                        const label = { draft_ready: "승인 대기", submission_accepted: "제출 검증 통과", needs_review: "확인 필요", general: "일반", quarantined: "격리", sent: "자동/승인 발송", error: "오류" }[item.status] ?? item.status;
                         return (
                           <div className={`inbox-item ${tierClass}`} key={item.message_id}>
                             <div className="inbox-top">
                               <span className={`ibadge ${tierClass}`}>{label}</span>
                               <span className="ibadge cls">{item.classification} {Math.round(item.confidence * 100)}%</span>
+                              {item.intent && item.intent !== "other" && <span className="ibadge cls">의도 {item.intent}</span>}
                               <span className="isender">{item.sender}</span>
                             </div>
                             <p className="isubject">{item.subject}</p>
@@ -956,6 +993,8 @@ export default function App() {
                               <div className="idraft">
                                 <p className="field-line"><b>초안</b> · {item.draft_subject}</p>
                                 <p className="field-line"><b>수신자</b> · {item.recipients.map((r) => r.email).join(", ")}</p>
+                                <p className="field-line"><b>양식</b> · {item.artifacts?.strategy === "generate" ? "AI 신규 생성" : "첨부 양식 사용"} · {item.artifacts?.filename ?? "확인 필요"}</p>
+                                <p className="field-line"><b>자율성 판단</b> · {item.decision?.action === "auto_send" ? "자동 발송" : "사람 승인"} · {item.decision?.source ?? "policy"}</p>
                                 <p className="field-line">
                                   <b>근거</b> · {Math.round((item.grounding?.score ?? 0) * 100)}%
                                   {item.sources?.length ? ` · ${item.sources.slice(0, 2).join(", ")}` : ""}
@@ -963,14 +1002,30 @@ export default function App() {
                                 {item.grounding?.flags?.length > 0 && (
                                   <p className="iflags">⚠ 확인 필요: {item.grounding.flags.join(", ")}</p>
                                 )}
+                                {!!item.artifacts?.agent_trace?.length && (
+                                  <div className="plan-box">
+                                    <b>Agent 실행 로그</b>
+                                    <ul className="trace">
+                                      {item.artifacts.agent_trace.slice(-6).map((step) => (
+                                        <li className="trace-step" key={step.seq}>
+                                          <span className="trace-phase">{step.agent}</span>
+                                          <span className="actor actor-rule">{step.outcome}</span>
+                                          <span className="trace-decision">{step.action}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
                                 <button className="primary" onClick={() => approveSend(item.message_id)} disabled={sendingId === item.message_id}>
                                   {sendingId === item.message_id ? "발송 중…" : "승인 · 발송"}
                                 </button>
                               </div>
                             )}
                             {item.status === "needs_review" && (
-                              <p className="iflags">사람이 취합 요청 여부를 확인해 주세요 (확신도 중간).</p>
+                              <p className="iflags">사람 확인 필요: {item.decision?.reasons?.join(" · ") || "분류 신뢰도 또는 업무 의도가 불명확합니다."}</p>
                             )}
+                            {item.status === "quarantined" && <p className="iflags">자동 실행 차단: 스팸·피싱·프롬프트 인젝션 가능성이 있습니다.</p>}
+                            {item.status === "sent" && item.decision?.action === "auto_send" && <p className="field-line"><b>자동 발송 완료</b> · 안전 정책 통과</p>}
                           </div>
                         );
                       })}

@@ -1,0 +1,467 @@
+{
+  "benchmark_type": "semantic_mail_classification",
+  "evidence_level": "actual_classifier_execution",
+  "dataset": "24개 고정 난이도 평가셋(일반·스팸·요청·제출·질문·수정·연장)",
+  "azure_ready": true,
+  "results": [
+    {
+      "mode": "heuristic",
+      "case_count": 24,
+      "category_accuracy": 0.5417,
+      "category_intent_exact_match": 0.4583,
+      "median_latency_ms": 0.017,
+      "p95_latency_ms": 0.033,
+      "actual_llm_responses": 0,
+      "details": [
+        {
+          "id": "g01",
+          "expected": "general/other",
+          "predicted": "general/other",
+          "category_correct": true,
+          "intent_exact": true,
+          "source": "rule",
+          "latency_ms": 0.452
+        },
+        {
+          "id": "g02",
+          "expected": "general/other",
+          "predicted": "general/other",
+          "category_correct": true,
+          "intent_exact": true,
+          "source": "rule",
+          "latency_ms": 0.025
+        },
+        {
+          "id": "g03",
+          "expected": "general/other",
+          "predicted": "general/other",
+          "category_correct": true,
+          "intent_exact": true,
+          "source": "rule",
+          "latency_ms": 0.018
+        },
+        {
+          "id": "g04",
+          "expected": "general/other",
+          "predicted": "general/other",
+          "category_correct": true,
+          "intent_exact": true,
+          "source": "rule",
+          "latency_ms": 0.013
+        },
+        {
+          "id": "g05",
+          "expected": "general/other",
+          "predicted": "general/other",
+          "category_correct": true,
+          "intent_exact": true,
+          "source": "rule",
+          "latency_ms": 0.014
+        },
+        {
+          "id": "s01",
+          "expected": "spam/other",
+          "predicted": "spam/other",
+          "category_correct": true,
+          "intent_exact": true,
+          "source": "rule",
+          "latency_ms": 0.017
+        },
+        {
+          "id": "s02",
+          "expected": "spam/other",
+          "predicted": "general/other",
+          "category_correct": false,
+          "intent_exact": false,
+          "source": "rule",
+          "latency_ms": 0.016
+        },
+        {
+          "id": "s03",
+          "expected": "spam/other",
+          "predicted": "spam/other",
+          "category_correct": true,
+          "intent_exact": true,
+          "source": "rule",
+          "latency_ms": 0.018
+        },
+        {
+          "id": "s04",
+          "expected": "spam/other",
+          "predicted": "spam/other",
+          "category_correct": true,
+          "intent_exact": true,
+          "source": "rule",
+          "latency_ms": 0.017
+        },
+        {
+          "id": "s05",
+          "expected": "spam/other",
+          "predicted": "spam/other",
+          "category_correct": true,
+          "intent_exact": true,
+          "source": "rule",
+          "latency_ms": 0.015
+        },
+        {
+          "id": "r01",
+          "expected": "collection/request",
+          "predicted": "general/other",
+          "category_correct": false,
+          "intent_exact": false,
+          "source": "rule",
+          "latency_ms": 0.025
+        },
+        {
+          "id": "r02",
+          "expected": "collection/request",
+          "predicted": "general/other",
+          "category_correct": false,
+          "intent_exact": false,
+          "source": "rule",
+          "latency_ms": 0.018
+        },
+        {
+          "id": "r03",
+          "expected": "collection/request",
+          "predicted": "general/other",
+          "category_correct": false,
+          "intent_exact": false,
+          "source": "rule",
+          "latency_ms": 0.014
+        },
+        {
+          "id": "r04",
+          "expected": "collection/request",
+          "predicted": "general/other",
+          "category_correct": false,
+          "intent_exact": false,
+          "source": "rule",
+          "latency_ms": 0.017
+        },
+        {
+          "id": "d01",
+          "expected": "collection/submission",
+          "predicted": "general/other",
+          "category_correct": false,
+          "intent_exact": false,
+          "source": "rule",
+          "latency_ms": 0.014
+        },
+        {
+          "id": "d02",
+          "expected": "collection/submission",
+          "predicted": "general/other",
+          "category_correct": false,
+          "intent_exact": false,
+          "source": "rule",
+          "latency_ms": 0.015
+        },
+        {
+          "id": "d03",
+          "expected": "collection/submission",
+          "predicted": "collection/submission",
+          "category_correct": true,
+          "intent_exact": true,
+          "source": "rule",
+          "latency_ms": 0.033
+        },
+        {
+          "id": "q01",
+          "expected": "collection/question",
+          "predicted": "collection/question",
+          "category_correct": true,
+          "intent_exact": true,
+          "source": "rule",
+          "latency_ms": 0.018
+        },
+        {
+          "id": "q02",
+          "expected": "collection/question",
+          "predicted": "general/other",
+          "category_correct": false,
+          "intent_exact": false,
+          "source": "rule",
+          "latency_ms": 0.014
+        },
+        {
+          "id": "q03",
+          "expected": "collection/question",
+          "predicted": "general/other",
+          "category_correct": false,
+          "intent_exact": false,
+          "source": "rule",
+          "latency_ms": 0.013
+        },
+        {
+          "id": "c01",
+          "expected": "collection/correction",
+          "predicted": "collection/submission",
+          "category_correct": true,
+          "intent_exact": false,
+          "source": "rule",
+          "latency_ms": 0.048
+        },
+        {
+          "id": "c02",
+          "expected": "collection/correction",
+          "predicted": "general/other",
+          "category_correct": false,
+          "intent_exact": false,
+          "source": "rule",
+          "latency_ms": 0.016
+        },
+        {
+          "id": "e01",
+          "expected": "collection/extension",
+          "predicted": "collection/question",
+          "category_correct": true,
+          "intent_exact": false,
+          "source": "rule",
+          "latency_ms": 0.019
+        },
+        {
+          "id": "e02",
+          "expected": "collection/extension",
+          "predicted": "general/other",
+          "category_correct": false,
+          "intent_exact": false,
+          "source": "rule",
+          "latency_ms": 0.014
+        }
+      ]
+    },
+    {
+      "mode": "azure_llm",
+      "case_count": 24,
+      "category_accuracy": 1.0,
+      "category_intent_exact_match": 1.0,
+      "median_latency_ms": 2457.98,
+      "p95_latency_ms": 2898.783,
+      "actual_llm_responses": 24,
+      "details": [
+        {
+          "id": "g01",
+          "expected": "general/other",
+          "predicted": "general/other",
+          "category_correct": true,
+          "intent_exact": true,
+          "source": "llm",
+          "latency_ms": 7508.46
+        },
+        {
+          "id": "g02",
+          "expected": "general/other",
+          "predicted": "general/other",
+          "category_correct": true,
+          "intent_exact": true,
+          "source": "llm",
+          "latency_ms": 2549.045
+        },
+        {
+          "id": "g03",
+          "expected": "general/other",
+          "predicted": "general/other",
+          "category_correct": true,
+          "intent_exact": true,
+          "source": "llm",
+          "latency_ms": 2460.081
+        },
+        {
+          "id": "g04",
+          "expected": "general/other",
+          "predicted": "general/other",
+          "category_correct": true,
+          "intent_exact": true,
+          "source": "llm",
+          "latency_ms": 2433.366
+        },
+        {
+          "id": "g05",
+          "expected": "general/other",
+          "predicted": "general/other",
+          "category_correct": true,
+          "intent_exact": true,
+          "source": "llm",
+          "latency_ms": 2355.516
+        },
+        {
+          "id": "s01",
+          "expected": "spam/other",
+          "predicted": "spam/other",
+          "category_correct": true,
+          "intent_exact": true,
+          "source": "llm",
+          "latency_ms": 2745.905
+        },
+        {
+          "id": "s02",
+          "expected": "spam/other",
+          "predicted": "spam/other",
+          "category_correct": true,
+          "intent_exact": true,
+          "source": "llm",
+          "latency_ms": 2898.783
+        },
+        {
+          "id": "s03",
+          "expected": "spam/other",
+          "predicted": "spam/other",
+          "category_correct": true,
+          "intent_exact": true,
+          "source": "llm",
+          "latency_ms": 2568.879
+        },
+        {
+          "id": "s04",
+          "expected": "spam/other",
+          "predicted": "spam/other",
+          "category_correct": true,
+          "intent_exact": true,
+          "source": "llm",
+          "latency_ms": 2538.77
+        },
+        {
+          "id": "s05",
+          "expected": "spam/other",
+          "predicted": "spam/other",
+          "category_correct": true,
+          "intent_exact": true,
+          "source": "llm",
+          "latency_ms": 4683.909
+        },
+        {
+          "id": "r01",
+          "expected": "collection/request",
+          "predicted": "collection/request",
+          "category_correct": true,
+          "intent_exact": true,
+          "source": "llm",
+          "latency_ms": 2505.056
+        },
+        {
+          "id": "r02",
+          "expected": "collection/request",
+          "predicted": "collection/request",
+          "category_correct": true,
+          "intent_exact": true,
+          "source": "llm",
+          "latency_ms": 2306.505
+        },
+        {
+          "id": "r03",
+          "expected": "collection/request",
+          "predicted": "collection/request",
+          "category_correct": true,
+          "intent_exact": true,
+          "source": "llm",
+          "latency_ms": 2278.451
+        },
+        {
+          "id": "r04",
+          "expected": "collection/request",
+          "predicted": "collection/request",
+          "category_correct": true,
+          "intent_exact": true,
+          "source": "llm",
+          "latency_ms": 2296.26
+        },
+        {
+          "id": "d01",
+          "expected": "collection/submission",
+          "predicted": "collection/submission",
+          "category_correct": true,
+          "intent_exact": true,
+          "source": "llm",
+          "latency_ms": 2455.88
+        },
+        {
+          "id": "d02",
+          "expected": "collection/submission",
+          "predicted": "collection/submission",
+          "category_correct": true,
+          "intent_exact": true,
+          "source": "llm",
+          "latency_ms": 2351.327
+        },
+        {
+          "id": "d03",
+          "expected": "collection/submission",
+          "predicted": "collection/submission",
+          "category_correct": true,
+          "intent_exact": true,
+          "source": "llm",
+          "latency_ms": 2707.217
+        },
+        {
+          "id": "q01",
+          "expected": "collection/question",
+          "predicted": "collection/question",
+          "category_correct": true,
+          "intent_exact": true,
+          "source": "llm",
+          "latency_ms": 2436.492
+        },
+        {
+          "id": "q02",
+          "expected": "collection/question",
+          "predicted": "collection/question",
+          "category_correct": true,
+          "intent_exact": true,
+          "source": "llm",
+          "latency_ms": 2466.508
+        },
+        {
+          "id": "q03",
+          "expected": "collection/question",
+          "predicted": "collection/question",
+          "category_correct": true,
+          "intent_exact": true,
+          "source": "llm",
+          "latency_ms": 2600.862
+        },
+        {
+          "id": "c01",
+          "expected": "collection/correction",
+          "predicted": "collection/correction",
+          "category_correct": true,
+          "intent_exact": true,
+          "source": "llm",
+          "latency_ms": 2321.335
+        },
+        {
+          "id": "c02",
+          "expected": "collection/correction",
+          "predicted": "collection/correction",
+          "category_correct": true,
+          "intent_exact": true,
+          "source": "llm",
+          "latency_ms": 2346.097
+        },
+        {
+          "id": "e01",
+          "expected": "collection/extension",
+          "predicted": "collection/extension",
+          "category_correct": true,
+          "intent_exact": true,
+          "source": "llm",
+          "latency_ms": 2279.444
+        },
+        {
+          "id": "e02",
+          "expected": "collection/extension",
+          "predicted": "collection/extension",
+          "category_correct": true,
+          "intent_exact": true,
+          "source": "llm",
+          "latency_ms": 2213.137
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "프로젝트 내부 고정 평가셋이며 독립 외부 데이터셋이 아님",
+    "운영 전 실제 회사 메일을 비식별화한 블라인드 평가가 추가로 필요함",
+    "LLM 지연·비용은 배포 모델과 네트워크에 따라 달라짐"
+  ]
+}

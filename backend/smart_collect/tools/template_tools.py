@@ -254,6 +254,7 @@ def template_spec_to_validation_rule(spec: TemplateSpec) -> ValidationRule:
     return ValidationRule(
         required_columns=[c.name for c in spec.columns if c.required],
         date_columns=[c.name for c in spec.columns if c.dtype == "date"],
+        number_columns=[c.name for c in spec.columns if c.dtype == "number"],
         code_rules={
             c.name: list(c.allowed_values)
             for c in spec.columns
@@ -278,7 +279,7 @@ def write_template_excel(spec: TemplateSpec, path: str | Path) -> Path:
     - 1행 헤더(필수 컬럼은 색으로 구분), 헤더 고정
     - 코드값 컬럼은 드롭다운(DataValidation)으로 잘못된 값 입력을 원천 차단
     - 날짜 컬럼은 날짜 표시 형식 지정
-    - 예시행 1개 + '작성안내' 시트(컬럼별 형식/허용값/설명)
+    - 빈 데이터 영역 + '작성안내' 시트(컬럼별 형식/허용값/예시/설명)
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -298,9 +299,10 @@ def write_template_excel(spec: TemplateSpec, path: str | Path) -> Path:
         letter = get_column_letter(idx)
         ws.column_dimensions[letter].width = max(len(col.name) + 4, 14)
 
-    # 예시행 (2행)
+    # 데이터 시트에는 예시값을 넣지 않는다. 배포한 양식 여러 개를 취합할 때
+    # 예시행이 실제 제출 데이터로 오인·중복되는 사고를 방지한다.
     for idx, col in enumerate(cols, start=1):
-        cell = ws.cell(row=2, column=idx, value=col.example or "")
+        cell = ws.cell(row=2, column=idx, value=None)
         cell.alignment = Alignment(horizontal="center")
         cell.border = _BORDER
         if col.dtype == "date":
@@ -326,8 +328,19 @@ def write_template_excel(spec: TemplateSpec, path: str | Path) -> Path:
                 ws.add_data_validation(dv)
                 dv.add(rng)
         elif col.dtype == "date":
-            for r in range(3, last_row + 1):
+            for r in range(2, last_row + 1):
                 ws.cell(row=r, column=idx).number_format = "yyyy-mm-dd"
+        elif col.dtype == "number":
+            dv = DataValidation(
+                type="custom",
+                formula1=f'OR({letter}2="",ISNUMBER({letter}2))',
+                allow_blank=not col.required,
+                showErrorMessage=True,
+            )
+            dv.error = "숫자 형식으로 입력하세요."
+            dv.errorTitle = "숫자 형식 오류"
+            ws.add_data_validation(dv)
+            dv.add(rng)
 
     ws.freeze_panes = "A2"
 
