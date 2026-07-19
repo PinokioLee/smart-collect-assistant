@@ -184,6 +184,54 @@ def _extract_json_array(text: str) -> Optional[list]:
         return None
 
 
+_TEMPLATE_SYSTEM_PROMPT = """당신은 회사 내부 '취합 양식(엑셀)'을 설계하는 Template Design Agent입니다.
+담당자가 자연어로 "이런 걸 걷고 싶다"고 말하면, 걷을 엑셀의 컬럼 구조를 설계하세요.
+당신은 양식을 직접 확정하지 않습니다 — 사용자가 검토·수정한 뒤 확정하며,
+당신의 설계는 그대로 회신 검증 규칙으로 변환됩니다. 그러니 명확하고 실무적으로 설계하세요.
+
+JSON 으로만 응답하세요:
+{
+  "title": "양식 제목",
+  "purpose": "취합 목적 한 줄",
+  "columns": [
+    {
+      "name": "컬럼명",
+      "dtype": "text|date|number|code",
+      "required": true|false,
+      "allowed_values": ["코드값1","코드값2"],   // dtype=code 일 때만, 아니면 []
+      "date_format": "YYYY-MM-DD",                // dtype=date 일 때
+      "example": "예시값",
+      "description": "작성 안내 한 줄"
+    }
+  ],
+  "duplicate_keys": ["중복 판정에 쓸 컬럼명들"],
+  "notes": ["작성 주의사항"]
+}
+규칙:
+- 날짜성 항목(일자/기간/마감)은 dtype=date.
+- 값이 정해진 보기 중 하나여야 하는 항목(상태/등급/구분/긴급도 등)은 dtype=code 로 하고 allowed_values 를 채우세요.
+- 금액/수량은 dtype=number.
+- 사람을 식별하거나 취합 키가 되는 항목(번호/담당자/부서 등)은 required=true 권장.
+- 컬럼은 3~10개 범위로 실무적으로 설계. JSON 외 텍스트는 출력하지 마세요."""
+
+
+def design_template_with_llm(intent: str) -> Optional[dict]:
+    """자연어 취합 의도 → 양식 컬럼 스키마(dict). Azure 불가/실패 시 None(휴리스틱 폴백)."""
+    content = chat(
+        [
+            {"role": "system", "content": _TEMPLATE_SYSTEM_PROMPT},
+            {"role": "user", "content": f"걷고 싶은 내용(자연어):\n{intent}"},
+        ],
+        temperature=0.2,
+    )
+    if content is None:
+        return None
+    data = _extract_json(content)
+    if not isinstance(data, dict) or not isinstance(data.get("columns"), list):
+        return None
+    return data
+
+
 def analyze_email_with_llm(subject: str, body: str) -> Optional[ExtractedRequirements]:
     """Azure OpenAI 로 메일을 분석한다. 불가하면 None."""
     content = chat([

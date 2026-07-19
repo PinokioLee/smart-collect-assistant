@@ -32,6 +32,38 @@ class ValidationRule(BaseModel):
     duplicate_keys: list[str] = Field(default_factory=list)
 
 
+class ColumnSpec(BaseModel):
+    """취합 양식(엑셀)의 컬럼 1개 정의.
+
+    자연어 요청을 LLM(또는 휴리스틱)이 이 구조로 '설계'하고,
+    결정론 코드가 이 정의로 엑셀 양식을 생성하고 검증 규칙으로 변환한다.
+    """
+
+    name: str                                   # 컬럼명 (예: 프로젝트번호)
+    dtype: str = "text"                          # text / date / number / code
+    required: bool = False                       # 필수 입력 여부
+    allowed_values: list[str] = Field(default_factory=list)  # dtype=code 일 때 허용값
+    date_format: str = "YYYY-MM-DD"              # dtype=date 일 때 표기 형식
+    example: Optional[str] = None                # 예시값 (양식 예시행/안내에 사용)
+    description: Optional[str] = None            # 작성 안내 문구
+
+
+class TemplateSpec(BaseModel):
+    """AI가 설계한 취합 양식 전체 정의(=검증 계약).
+
+    이 스펙 하나로 (1) 배포용 엑셀 양식 생성 (2) 회신 검증 규칙 생성을
+    모두 결정론적으로 파생한다 — '보낸 양식 = 검증 기준' 라운드트립의 단일 출처.
+    """
+
+    title: str = "취합 양식"                      # 양식 제목 (시트/파일명 기반)
+    purpose: Optional[str] = None                # 취합 목적
+    deadline: Optional[str] = None               # 제출 기한 (있으면)
+    columns: list[ColumnSpec] = Field(default_factory=list)
+    duplicate_keys: list[str] = Field(default_factory=list)  # 중복 판정 키
+    notes: list[str] = Field(default_factory=list)           # 작성 주의사항
+    source: str = "heuristic"                    # 판단 주체: llm / heuristic
+
+
 class ErrorDetail(BaseModel):
     """검증 오류 1건."""
 
@@ -111,6 +143,10 @@ class AgentState(BaseModel):
     # 분석 결과
     extracted_requirements: Optional[ExtractedRequirements] = None
     validation_rules: Optional[ValidationRule] = None
+    # True 이면 validation_rules 가 '생성한 양식(TemplateSpec)'에서 확정된 계약이므로
+    # Supervisor 는 ToT 로 규칙을 재도출하지 않고 그대로 사용한다(라운드트립).
+    template_locked: bool = False
+    template_id: Optional[str] = None
     # Supervisor(LLM) 의 실행 계획·리스크 판단 (에이전틱 계획 단계)
     supervisor_plan: Optional[dict[str, Any]] = None
 

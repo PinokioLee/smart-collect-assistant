@@ -19,6 +19,7 @@ DATA_DIR = ROOT_DIR / "data"
 SAMPLE_DIR = DATA_DIR / "samples"
 MERGED_DIR = DATA_DIR / "merged_files"
 ERROR_DIR = DATA_DIR / "error_reports"
+TEMPLATE_DIR = DATA_DIR / "templates"
 LOG_DIR = ROOT_DIR / "logs"
 
 # .env 로드 (있으면)
@@ -85,5 +86,5 @@ settings = Settings()
 
 def ensure_dirs() -> None:
     """런타임 출력 디렉터리 보장."""
-    for d in (DATA_DIR, SAMPLE_DIR, MERGED_DIR, ERROR_DIR, LOG_DIR):
+    for d in (DATA_DIR, SAMPLE_DIR, MERGED_DIR, ERROR_DIR, TEMPLATE_DIR, LOG_DIR):
         d.mkdir(parents=True, exist_ok=True)

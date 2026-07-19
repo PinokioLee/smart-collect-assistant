@@ -64,6 +64,7 @@ export interface CollectInput {
   useGraph: boolean;
   useLlm: boolean;
   files: File[];
+  templateId?: string;
 }
 
 export async function collect(input: CollectInput): Promise<CollectResponse> {
@@ -72,8 +73,63 @@ export async function collect(input: CollectInput): Promise<CollectResponse> {
   form.append("body", input.body);
   form.append("use_graph", String(input.useGraph));
   form.append("use_llm", String(input.useLlm));
+  if (input.templateId) form.append("template_id", input.templateId);
   input.files.forEach((f) => form.append("files", f));
   const { data } = await client.post<CollectResponse>("/collect", form);
+  return data;
+}
+
+// ---------- 양식 자동 설계·생성 (Template Design Agent) ----------
+
+export interface ColumnSpec {
+  name: string;
+  dtype: string; // text | date | number | code
+  required: boolean;
+  allowed_values: string[];
+  date_format: string;
+  example: string | null;
+  description: string | null;
+}
+
+export interface TemplateSpec {
+  title: string;
+  purpose: string | null;
+  deadline: string | null;
+  columns: ColumnSpec[];
+  duplicate_keys: string[];
+  notes: string[];
+  source: string; // llm | heuristic
+}
+
+export interface ValidationRuleDTO {
+  required_columns: string[];
+  date_columns: string[];
+  code_rules: Record<string, string[]>;
+  duplicate_keys: string[];
+}
+
+export async function designTemplate(
+  intent: string,
+  useLlm = true
+): Promise<{ template_spec: TemplateSpec; validation_rule: ValidationRuleDTO; llm_used: boolean }> {
+  const form = new FormData();
+  form.append("intent", intent);
+  form.append("use_llm", String(useLlm));
+  const { data } = await client.post("/design-template", form);
+  return data;
+}
+
+export interface BuildTemplateResponse {
+  template_id: string;
+  filename: string;
+  excel_path: string;
+  download: string;
+  validation_rule: ValidationRuleDTO;
+  template_spec: TemplateSpec;
+}
+
+export async function buildTemplate(spec: TemplateSpec): Promise<BuildTemplateResponse> {
+  const { data } = await client.post<BuildTemplateResponse>("/build-template", { template_spec: spec });
   return data;
 }
 
@@ -165,11 +221,13 @@ export async function sendRequestMail(input: {
   subject: string;
   body: string;
   files: File[];
+  templateId?: string;
 }): Promise<SendRequestMailResponse> {
   const form = new FormData();
   form.append("to", input.to);
   form.append("subject", input.subject);
   form.append("body", input.body);
+  if (input.templateId) form.append("template_id", input.templateId);
   input.files.forEach((f) => form.append("files", f));
   const { data } = await client.post<SendRequestMailResponse>("/send-request-mail", form);
   return data;

@@ -70,9 +70,18 @@ def build_graph():
 
 
 def run_collection_graph(
-    request_id: str, subject: str, body: str, excel_files: list[str]
+    request_id: str,
+    subject: str,
+    body: str,
+    excel_files: list[str],
+    *,
+    rule_override=None,
+    template_id: str | None = None,
 ) -> AgentState:
-    """LangGraph 워크플로우로 취합 1건을 실행한다."""
+    """LangGraph 워크플로우로 취합 1건을 실행한다.
+
+    rule_override(ValidationRule)가 있으면 '생성한 양식 = 검증 계약'으로 고정한다.
+    """
     from pathlib import Path
 
     from .config import ensure_dirs
@@ -85,6 +94,10 @@ def run_collection_graph(
         raw_email_body=body,
         uploaded_excel_files=[str(Path(p)) for p in excel_files],
     )
+    if rule_override is not None:
+        initial.validation_rules = rule_override
+        initial.template_locked = True
+        initial.template_id = template_id
     result = app.invoke(initial)
     # LangGraph 는 dict 또는 AgentState 를 반환할 수 있어 정규화
     if isinstance(result, AgentState):

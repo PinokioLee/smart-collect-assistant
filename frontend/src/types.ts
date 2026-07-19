@@ -82,6 +82,8 @@ export interface CollectResponse {
   validation_result: ValidationResult | null;
   self_correction: SelfCorrectionResult | null;
   supervisor_plan: SupervisorPlan | null;
+  template_locked?: boolean;
+  template_id?: string | null;
   merged_file: string | null;
   error_report: string | null;
   result_summary: string | null;

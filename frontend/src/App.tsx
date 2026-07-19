@@ -21,11 +21,15 @@ import {
   sendRequestMail,
   syncCommonFields,
   trackSubmissions,
+  designTemplate,
+  buildTemplate,
   type GuideResponse,
   type Health,
   type SendRequestMailResponse,
   type SyncCommonFieldsResponse,
   type TrackResponse,
+  type TemplateSpec,
+  type BuildTemplateResponse,
 } from "./api";
 import type { CollectResponse } from "./types";
 
@@ -48,6 +52,17 @@ export default function App() {
   const [sendResult, setSendResult] = useState<SendRequestMailResponse | null>(null);
 
   // 2. 제출 엑셀 검증/병합
+  // 양식 자동 설계 (Template Design Agent)
+  const [templateIntent, setTemplateIntent] = useState(
+    "프로젝트별 월 실적을 걷을 건데 프로젝트번호, 담당자, 매출액, 진행상태(정상/지연/보류), 마감일자 받고 싶어"
+  );
+  const [templateSpec, setTemplateSpec] = useState<TemplateSpec | null>(null);
+  const [templateLlmUsed, setTemplateLlmUsed] = useState(false);
+  const [templateDesignLoading, setTemplateDesignLoading] = useState(false);
+  const [templateBuilt, setTemplateBuilt] = useState<BuildTemplateResponse | null>(null);
+  const [templateBuildLoading, setTemplateBuildLoading] = useState(false);
+  const [useTemplateForFlow, setUseTemplateForFlow] = useState(true);
+
   const [files, setFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<CollectResponse | null>(null);
@@ -205,11 +220,73 @@ export default function App() {
     setSendLoading(true);
     setSendResult(null);
     try {
-      setSendResult(await sendRequestMail({ to: recipients, subject: draftSubject, body: draftBody, files: attachFiles }));
+      const tid = useTemplateForFlow && templateBuilt ? templateBuilt.template_id : undefined;
+      setSendResult(await sendRequestMail({ to: recipients, subject: draftSubject, body: draftBody, files: attachFiles, templateId: tid }));
     } catch (e: any) {
       setError(e?.response?.data?.detail ?? String(e));
     } finally {
       setSendLoading(false);
+    }
+  }
+
+  async function designForm() {
+    setError(null);
+    if (!templateIntent.trim()) {
+      setError("걷고 싶은 내용을 자연어로 입력하세요.");
+      return;
+    }
+    setTemplateDesignLoading(true);
+    setTemplateBuilt(null);
+    try {
+      const r = await designTemplate(templateIntent, true);
+      setTemplateSpec(r.template_spec);
+      setTemplateLlmUsed(r.llm_used);
+    } catch (e: any) {
+      setError(e?.response?.data?.detail ?? String(e));
+    } finally {
+      setTemplateDesignLoading(false);
+    }
+  }
+
+  function updateColumn(idx: number, patch: Partial<TemplateSpec["columns"][number]>) {
+    setTemplateSpec((prev) => {
+      if (!prev) return prev;
+      const columns = prev.columns.map((c, i) => (i === idx ? { ...c, ...patch } : c));
+      return { ...prev, columns };
+    });
+  }
+
+  function removeColumn(idx: number) {
+    setTemplateSpec((prev) =>
+      prev ? { ...prev, columns: prev.columns.filter((_, i) => i !== idx) } : prev
+    );
+  }
+
+  function addColumn() {
+    setTemplateSpec((prev) =>
+      prev
+        ? {
+            ...prev,
+            columns: [
+              ...prev.columns,
+              { name: "새 컬럼", dtype: "text", required: false, allowed_values: [], date_format: "YYYY-MM-DD", example: null, description: null },
+            ],
+          }
+        : prev
+    );
+  }
+
+  async function buildForm() {
+    if (!templateSpec) return;
+    setError(null);
+    setTemplateBuildLoading(true);
+    try {
+      const r = await buildTemplate(templateSpec);
+      setTemplateBuilt(r);
+    } catch (e: any) {
+      setError(e?.response?.data?.detail ?? String(e));
+    } finally {
+      setTemplateBuildLoading(false);
     }
   }
 
@@ -282,7 +359,8 @@ export default function App() {
     setLoading(true);
     setResult(null);
     try {
-      const res = await collect({ subject: subj, body: bod, useGraph: true, useLlm: true, files });
+      const tid = useTemplateForFlow && templateBuilt ? templateBuilt.template_id : undefined;
+      const res = await collect({ subject: subj, body: bod, useGraph: true, useLlm: true, files, templateId: tid });
       setResult(res);
     } catch (e: any) {
       setError(e?.response?.data?.detail ?? String(e));
@@ -394,12 +472,108 @@ export default function App() {
       {error && <p className="error">⚠ {error}</p>}
 
       <div className="screen">
-        {/* ===== 01 요청 ===== */}
+        {/* ===== 02 양식 설계 ===== */}
         <section className="lane" style={{ order: 2 }}>
           <div className="lane-head">
-            <div className="lane-eyebrow"><span className="lane-no">02</span><span className="lane-kicker">요청</span></div>
+            <div className="lane-eyebrow"><span className="lane-no">02</span><span className="lane-kicker">양식 설계</span></div>
+            <h2 className="lane-title">취합 양식 자동 생성</h2>
+            <p className="lane-desc">자연어로 원하는 항목 → 🧠 AI가 컬럼 설계 → 엑셀 양식 생성 · 이 양식이 곧 검증 기준</p>
+          </div>
+          <div className="lane-body">
+            <div className="split">
+              <div className="col">
+                <div className="sub">
+                  <div className="sub-label"><span className="step-chip">A</span> 어떤 걸 걷고 싶으세요? (자연어)</div>
+                  <textarea
+                    value={templateIntent}
+                    onChange={(e) => setTemplateIntent(e.target.value)}
+                    rows={4}
+                    placeholder="예: 프로젝트번호, 담당자, 매출액, 진행상태(정상/지연/보류), 마감일자 받고 싶어"
+                  />
+                  <p className="hint">항목은 쉼표로 구분하고, 보기가 정해진 항목은 <code>진행상태(정상/지연/보류)</code>처럼 괄호로 적으면 드롭다운으로 만듭니다.</p>
+                  <button className="primary block-btn" onClick={designForm} disabled={templateDesignLoading}>
+                    {templateDesignLoading ? "설계 중…" : "AI로 양식 설계"}
+                  </button>
+                  {templateSpec && (
+                    <span className={`chip badge-inline${templateLlmUsed ? "" : " warn"}`}>
+                      {templateLlmUsed ? "🧠 LLM이 설계함" : "⚙️ 휴리스틱 설계 (Azure 키 없음)"}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="col">
+                <div className="sub">
+                  <div className="sub-label"><span className="step-chip">B</span> 설계된 컬럼 — 검토·수정 후 확정</div>
+                  {!templateSpec && <p className="hint">왼쪽에서 설계를 실행하면 컬럼 표가 여기에 나타납니다. 확정 전까지 자유롭게 수정하세요.</p>}
+                  {templateSpec && (
+                    <>
+                      <div className="table-wrap">
+                        <table className="errtable">
+                          <thead><tr><th>컬럼명</th><th>형식</th><th>필수</th><th>허용값(/)</th><th></th></tr></thead>
+                          <tbody>
+                            {templateSpec.columns.map((c, i) => (
+                              <tr key={i}>
+                                <td><input className="cell-in" value={c.name} onChange={(e) => updateColumn(i, { name: e.target.value })} /></td>
+                                <td>
+                                  <select value={c.dtype} onChange={(e) => updateColumn(i, { dtype: e.target.value })}>
+                                    <option value="text">텍스트</option>
+                                    <option value="date">날짜</option>
+                                    <option value="number">숫자</option>
+                                    <option value="code">코드값</option>
+                                  </select>
+                                </td>
+                                <td style={{ textAlign: "center" }}>
+                                  <input type="checkbox" checked={c.required} onChange={(e) => updateColumn(i, { required: e.target.checked })} />
+                                </td>
+                                <td>
+                                  {c.dtype === "code" ? (
+                                    <input className="cell-in" value={c.allowed_values.join("/")} placeholder="정상/지연/보류"
+                                      onChange={(e) => updateColumn(i, { allowed_values: e.target.value.split("/").map((v) => v.trim()).filter(Boolean) })} />
+                                  ) : (<span className="muted">-</span>)}
+                                </td>
+                                <td><button className="ghost inline mini" onClick={() => removeColumn(i)}>✕</button></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <button className="ghost inline" onClick={addColumn}>+ 컬럼 추가</button>
+                      <button className="primary block-btn" onClick={buildForm} disabled={templateBuildLoading}>
+                        {templateBuildLoading ? "생성 중…" : "이 양식으로 엑셀 생성 · 확정"}
+                      </button>
+                    </>
+                  )}
+                  {templateBuilt && (
+                    <div className="dispatch">
+                      <div className="row">
+                        <a className="primary" href={templateBuilt.download}>⬇ 생성된 양식 엑셀</a>
+                        <span className="chip badge-inline">{templateBuilt.filename}</span>
+                      </div>
+                      <div className="block">
+                        <h4>이 양식이 곧 회신 검증 규칙 (라운드트립)</h4>
+                        <p className="field-line"><b>필수</b> · {templateBuilt.validation_rule.required_columns.join(", ") || "-"}</p>
+                        <p className="field-line"><b>날짜</b> · {templateBuilt.validation_rule.date_columns.join(", ") || "-"}</p>
+                        <p className="field-line"><b>코드값</b> · {Object.entries(templateBuilt.validation_rule.code_rules).map(([k, v]) => `${k}=${v.join("/")}`).join(", ") || "-"}</p>
+                      </div>
+                      <label className="check-line">
+                        <input type="checkbox" checked={useTemplateForFlow} onChange={(e) => setUseTemplateForFlow(e.target.checked)} />
+                        이 양식을 아래 요청 발송·검증에 사용 (자동 첨부 + 검증 기준으로 고정)
+                      </label>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ===== 03 요청 ===== */}
+        <section className="lane" style={{ order: 3 }}>
+          <div className="lane-head">
+            <div className="lane-eyebrow"><span className="lane-no">03</span><span className="lane-kicker">요청</span></div>
             <h2 className="lane-title">취합 요청 메일 보내기</h2>
-            <p className="lane-desc">받은 요청 → 내 스타일 초안 → 양식 첨부·발송</p>
+            <p className="lane-desc">받은 요청 → 내 스타일 초안 → 양식 첨부·발송{templateBuilt && useTemplateForFlow ? " · 생성한 양식 자동 첨부됨" : ""}</p>
           </div>
           <div className="lane-body">
             <div className="split wide-left">
@@ -460,10 +634,10 @@ export default function App() {
           </div>
         </section>
 
-        {/* ===== 02 검증 ===== */}
-        <section className="lane" style={{ order: 3 }}>
+        {/* ===== 04 검증 ===== */}
+        <section className="lane" style={{ order: 4 }}>
           <div className="lane-head">
-            <div className="lane-eyebrow"><span className="lane-no">03</span><span className="lane-kicker">검증</span></div>
+            <div className="lane-eyebrow"><span className="lane-no">04</span><span className="lane-kicker">검증</span></div>
             <h2 className="lane-title">제출 엑셀 검증 · 병합</h2>
             <p className="lane-desc">회신 첨부 검증 → 정상만 병합 → 취합 엑셀 다운로드</p>
           </div>
@@ -494,7 +668,7 @@ export default function App() {
                       </div>
                       {result.validation_rules && (
                         <div className="block">
-                          <h4>적용된 검증 규칙</h4>
+                          <h4>적용된 검증 규칙 {result.template_locked && <span className="chip badge-inline">🔒 생성한 양식 = 검증 계약</span>}</h4>
                           <p className="field-line"><b>필수</b> · {result.validation_rules.required_columns.join(", ") || "-"}</p>
                           <p className="field-line"><b>날짜</b> · {result.validation_rules.date_columns.join(", ") || "-"}</p>
                           <p className="field-line"><b>코드값</b> · {Object.entries(result.validation_rules.code_rules).map(([k, v]) => `${k}=${v.join("/")}`).join(", ") || "-"}</p>
@@ -585,9 +759,9 @@ export default function App() {
         </section>
 
         {/* ===== 03 추적 ===== */}
-        <section className="lane" style={{ order: 4 }}>
+        <section className="lane" style={{ order: 5 }}>
           <div className="lane-head">
-            <div className="lane-eyebrow"><span className="lane-no">04</span><span className="lane-kicker">추적</span></div>
+            <div className="lane-eyebrow"><span className="lane-no">05</span><span className="lane-kicker">추적</span></div>
             <h2 className="lane-title">제출 현황 · 리마인드</h2>
             <p className="lane-desc">제출 현황 확인 · 미제출자 리마인드 초안</p>
           </div>
@@ -634,9 +808,9 @@ export default function App() {
         </section>
 
         {/* ===== 04 수정 ===== */}
-        <section className="lane" style={{ order: 5 }}>
+        <section className="lane" style={{ order: 6 }}>
           <div className="lane-head">
-            <div className="lane-eyebrow"><span className="lane-no">05</span><span className="lane-kicker">수정</span></div>
+            <div className="lane-eyebrow"><span className="lane-no">06</span><span className="lane-kicker">수정</span></div>
             <h2 className="lane-title">공통 항목 일괄 수정</h2>
             <p className="lane-desc">기준 파일의 프로젝트 공통 정보로 대상 파일 동기화 (원본 보존)</p>
           </div>

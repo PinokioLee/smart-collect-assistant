@@ -292,6 +292,16 @@ pre {
 
 .badge-inline { display: inline-block; margin-bottom: 8px; }
 
+/* 양식 설계 — 편집 가능한 컬럼 표 */
+.cell-in {
+  width: 100%; box-sizing: border-box; font-size: 12px; padding: 4px 6px;
+  border: 1px solid var(--line); border-radius: 6px; font-family: var(--sans);
+}
+.errtable select { font-size: 12px; padding: 3px 4px; border: 1px solid var(--line); border-radius: 6px; }
+button.mini { padding: 2px 8px; font-size: 12px; line-height: 1.2; }
+.check-line { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-2); margin-top: 10px; }
+.check-line input { width: auto; }
+
 /* 노트북(≈1024px+)까지 2×2 한 화면 유지. 태블릿/모바일(≤1023px)만 세로 스택 */
 @media (max-width: 1023px) {
   .shell { min-height: 100vh; }

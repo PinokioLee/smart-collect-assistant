@@ -23,7 +23,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile  # n
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from fastapi.responses import FileResponse  # noqa: E402
 
-from smart_collect.config import DATA_DIR, SAMPLE_DIR, ensure_dirs, settings  # noqa: E402
+from smart_collect.config import DATA_DIR, SAMPLE_DIR, TEMPLATE_DIR, ensure_dirs, settings  # noqa: E402
 from smart_collect.graph import run_collection_graph  # noqa: E402
 from smart_collect.pipeline import run_collection  # noqa: E402
 from smart_collect.sample_data import (  # noqa: E402
@@ -68,6 +68,8 @@ def _state_to_dict(state: AgentState) -> dict:
         if state.self_correction
         else None,
         "supervisor_plan": state.supervisor_plan,
+        "template_locked": state.template_locked,
+        "template_id": state.template_id,
         "merged_file": state.merged_file,
         "error_report": state.error_report,
         "result_summary": state.result_summary,
@@ -126,6 +128,65 @@ def gen_project_samples() -> dict:
 @app.get("/api/sample-email")
 def sample_email() -> dict:
     return {"subject": MOCK_EMAIL["subject"], "body": MOCK_EMAIL["body"]}
+
+
+@app.post("/api/design-template")
+def design_template(intent: str = Form(...), use_llm: bool = Form(True)) -> dict:
+    """자연어 취합 의도 → 양식 컬럼 스키마 설계(미리보기, 미확정).
+
+    LLM(Azure) 이 있으면 LLM 설계, 없으면 휴리스틱. 사용자가 검토·수정 후 build 로 확정한다.
+    """
+    from smart_collect.tools.template_tools import (
+        design_template_from_intent,
+        template_spec_to_validation_rule,
+    )
+
+    intent = (intent or "").strip()
+    if not intent:
+        raise HTTPException(status_code=400, detail="걷고 싶은 내용을 입력하세요.")
+    spec = design_template_from_intent(intent, prefer_llm=use_llm)
+    rule = template_spec_to_validation_rule(spec)
+    return {
+        "template_spec": spec.model_dump(),
+        "validation_rule": rule.model_dump(),
+        "llm_used": spec.source == "llm",
+    }
+
+
+@app.post("/api/build-template")
+def build_template(payload: dict) -> dict:
+    """검토·수정한 양식 스펙을 확정해 배포용 엑셀 양식을 생성한다.
+
+    payload: TemplateSpec(dict) 또는 {template_spec: {...}}
+    반환: template_id, 다운로드 링크, 파생된 검증 규칙(라운드트립 증거).
+    """
+    from smart_collect.state import TemplateSpec
+    from smart_collect.tools.template_tools import build_and_save_template
+
+    data = payload.get("template_spec") if "template_spec" in payload else payload
+    try:
+        spec = TemplateSpec.model_validate(data)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=f"양식 스펙이 올바르지 않습니다: {exc}") from exc
+    if not spec.columns:
+        raise HTTPException(status_code=400, detail="컬럼이 1개 이상 필요합니다.")
+    ensure_dirs()
+    return build_and_save_template(spec)
+
+
+@app.get("/api/download-template/{template_id}")
+def download_template(template_id: str) -> FileResponse:
+    """생성한 양식 엑셀 파일 다운로드."""
+    from smart_collect.tools.template_tools import template_excel_path
+
+    path = template_excel_path(template_id)
+    if path is None or not path.exists():
+        raise HTTPException(status_code=404, detail="양식 파일을 찾을 수 없습니다.")
+    return FileResponse(
+        path,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename=path.name,
+    )
 
 
 @app.post("/api/inbox/ingest")
@@ -208,12 +269,26 @@ async def collect(
     body: str = Form(...),
     use_graph: bool = Form(True),
     use_llm: bool = Form(True),
+    template_id: str = Form(""),
     files: list[UploadFile] = File(...),
 ) -> dict:
     if not files:
         raise HTTPException(status_code=400, detail="엑셀 파일을 1개 이상 업로드하세요.")
 
     ensure_dirs()
+
+    # 라운드트립: 생성한 양식(template_id)이 지정되면 그 양식이 곧 검증 규칙이 된다.
+    rule_override = None
+    if template_id.strip():
+        from smart_collect.tools.template_tools import (
+            load_template_spec,
+            template_spec_to_validation_rule,
+        )
+
+        spec = load_template_spec(template_id.strip())
+        if spec is None:
+            raise HTTPException(status_code=404, detail="지정한 양식(template_id)을 찾을 수 없습니다.")
+        rule_override = template_spec_to_validation_rule(spec)
     request_id = "REQ-" + datetime.now().strftime("%Y%m%d-%H%M%S")
     job_dir = UPLOAD_DIR / request_id
     job_dir.mkdir(parents=True, exist_ok=True)
@@ -231,10 +306,16 @@ async def collect(
 
     try:
         if use_graph:
-            state = run_collection_graph(request_id, subject, body, saved)
+            state = run_collection_graph(
+                request_id, subject, body, saved,
+                rule_override=rule_override,
+                template_id=template_id.strip() or None,
+            )
         else:
             state = run_collection(
-                request_id, subject, body, saved, prefer_llm=use_llm
+                request_id, subject, body, saved, prefer_llm=use_llm,
+                rule_override=rule_override,
+                template_id=template_id.strip() or None,
             )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"처리 실패: {exc}") from exc
@@ -478,11 +559,13 @@ async def send_request_mail(
     to: str = Form(...),
     subject: str = Form(...),
     body: str = Form(...),
+    template_id: str = Form(""),
     files: list[UploadFile] = File(default=[]),
 ) -> dict:
     """요청 메일 초안 + 첨부 양식 엑셀을 발송한다(1번 흐름).
 
     to: 쉼표로 구분된 수신자 이메일. files: 요청과 함께 받은 양식 엑셀(첨부).
+    template_id: 지정하면 AI가 생성한 양식 엑셀을 자동 첨부한다.
     기본은 mock 발송. EMAIL_SEND_MODE=gmail 이면 실제 발송.
     """
     from smart_collect.tools.email_tools import EmailSendRequest, send_email
@@ -495,6 +578,14 @@ async def send_request_mail(
 
     ensure_dirs()
     attach_paths: list[str] = []
+    # 생성한 양식(template_id)을 자동 첨부
+    if template_id.strip():
+        from smart_collect.tools.template_tools import template_excel_path
+
+        tpath = template_excel_path(template_id.strip())
+        if tpath is None or not tpath.exists():
+            raise HTTPException(status_code=404, detail="지정한 양식(template_id)을 찾을 수 없습니다.")
+        attach_paths.append(str(tpath))
     if files:
         req_id = "SEND-" + datetime.now().strftime("%Y%m%d-%H%M%S")
         adir = UPLOAD_DIR / req_id

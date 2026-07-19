@@ -103,8 +103,19 @@ def node_supervisor_plan(state: AgentState, *, use_llm: bool = True) -> AgentSta
         state.supervisor_plan = {"strategy": "balanced", "source": "heuristic"}
         state.step("PLAN", "Azure 미사용 → 휴리스틱 계획으로 진행", actor="rule")
 
+    # 생성한 양식(TemplateSpec)에서 확정된 규칙이면 재도출하지 않고 그대로 사용(라운드트립)
+    if state.template_locked and state.validation_rules is not None:
+        rule = state.validation_rules
+        state.step(
+            "SELECT",
+            f"생성한 양식을 검증 계약으로 확정 · 필수컬럼={rule.required_columns}",
+            detail={
+                "required_columns": rule.required_columns,
+                "template_id": state.template_id,
+            },
+        )
     # ToT: 실제 업로드 엑셀 헤더로 후보 규칙 3개를 정합성 점수로 평가·선택 (결정론)
-    if actual_columns:
+    elif actual_columns:
         rule, tot_log = select_rules_with_tot(
             req, "\n".join(req.cautions), actual_columns
         )
@@ -310,8 +321,13 @@ def run_collection(
     excel_files: list[str],
     *,
     prefer_llm: bool = True,
+    rule_override: "ValidationRule | None" = None,
+    template_id: str | None = None,
 ) -> AgentState:
-    """Phase 1 선형 오케스트레이터 (Supervisor 흐름을 코드로 표현)."""
+    """Phase 1 선형 오케스트레이터 (Supervisor 흐름을 코드로 표현).
+
+    rule_override 가 있으면 '생성한 양식 = 검증 계약'으로 고정해 실행한다(라운드트립).
+    """
     ensure_dirs()
     state = AgentState(
         request_id=request_id,
@@ -319,6 +335,10 @@ def run_collection(
         raw_email_body=body,
         uploaded_excel_files=[str(Path(p)) for p in excel_files],
     )
+    if rule_override is not None:
+        state.validation_rules = rule_override
+        state.template_locked = True
+        state.template_id = template_id
     state.handoff("Supervisor Agent", "StartNode")
     trace_execution(request_id, "StartNode", input_summary={"files": len(excel_files)})
 

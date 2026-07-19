@@ -19,6 +19,7 @@ data/merged_files/*
 data/error_reports/*
 data/updated_files/*
 data/uploads/
+data/templates/
 data/samples/
 data/style_samples/
 data/traces/*
