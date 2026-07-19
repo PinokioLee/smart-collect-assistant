@@ -56,6 +56,9 @@ class Settings:
     # Email reading (수신함 수집)
     # mock: 내장 샘플 수신함 반환 / gmail: Gmail API 로 실제 수신함 읽기(gmail.readonly)
     email_read_mode: str = os.getenv("EMAIL_READ_MODE", "mock").strip().lower()
+    # mock 수신함 구성. default: 기존 5건(테스트 고정 픽스처, 개수 변경 금지) /
+    # demo: 시연 영상용 확장 세트(첨부O 요청 1 · 첨부X 요청 1 · 일반 10 · 스팸 2)
+    mock_inbox_profile: str = os.getenv("MOCK_INBOX_PROFILE", "default").strip().lower()
     gmail_credentials_file: str = os.getenv("GMAIL_CREDENTIALS_FILE", "")
     gmail_token_file: str = os.getenv(
         "GMAIL_TOKEN_FILE", str(DATA_DIR / "gmail_token.json")
