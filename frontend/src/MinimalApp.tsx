@@ -39,6 +39,8 @@ type ViewMode = "operate" | "demo";
 type DemoStep = "template" | "request" | "validate" | "track" | "sync";
 type QueueFilter = "all" | "done" | "action" | "quarantine";
 
+const PRESENTATION_MODE = new URLSearchParams(window.location.search).get("presentation") === "1";
+
 const DEMO_STEPS: Array<{ id: DemoStep; number: string; label: string; description: string }> = [
   { id: "template", number: "01", label: "양식 설계", description: "요청을 검증 가능한 엑셀로" },
   { id: "request", number: "02", label: "요청 발송", description: "작성 안내와 메일 초안 생성" },
@@ -73,6 +75,7 @@ function toMessage(error: unknown) {
 }
 
 function initialMode(): ViewMode {
+  if (PRESENTATION_MODE) return "operate";
   return new URLSearchParams(window.location.search).get("view") === "demo" ? "demo" : "operate";
 }
 
@@ -536,14 +539,16 @@ export default function MinimalApp() {
           >
             자동 운영
           </button>
-          <button
-            className={mode === "demo" ? "active" : ""}
-            onClick={() => setMode("demo")}
-            role="tab"
-            aria-selected={mode === "demo"}
-          >
-            단계별 시연
-          </button>
+          {!PRESENTATION_MODE && (
+            <button
+              className={mode === "demo" ? "active" : ""}
+              onClick={() => setMode("demo")}
+              role="tab"
+              aria-selected={mode === "demo"}
+            >
+              단계별 시연
+            </button>
+          )}
         </div>
         <div className="header-right">
           <button
