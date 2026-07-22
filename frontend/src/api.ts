@@ -317,6 +317,8 @@ export interface InboxItem {
     recipient_source?: "original_sender_cc" | "directory_explicit_target" | "missing_recipients" | string;
     template_id?: string | null;
     filename?: string;
+    source_attachments?: string[];
+    attachment_paths?: string[];
     download?: string | null;
     job_id?: string;
     answer_grounding?: {

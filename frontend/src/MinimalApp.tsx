@@ -37,6 +37,7 @@ import type { CollectResponse } from "./types";
 
 type ViewMode = "operate" | "demo";
 type DemoStep = "template" | "request" | "validate" | "track" | "sync";
+type QueueFilter = "all" | "done" | "action" | "quarantine";
 
 const DEMO_STEPS: Array<{ id: DemoStep; number: string; label: string; description: string }> = [
   { id: "template", number: "01", label: "양식 설계", description: "요청을 검증 가능한 엑셀로" },
@@ -110,7 +111,7 @@ export default function MinimalApp() {
   const [operating, setOperating] = useState(false);
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [sendingId, setSendingId] = useState<string | null>(null);
-  const [queueFilter, setQueueFilter] = useState<"all" | "action" | "done">("action");
+  const [queueFilter, setQueueFilter] = useState<QueueFilter>("all");
 
   // 양식 설계
   const [templateIntent, setTemplateIntent] = useState(
@@ -507,7 +508,8 @@ export default function MinimalApp() {
   const visibleQueue = useMemo(() => {
     const queue = inbox?.queue ?? [];
     if (queueFilter === "done") return queue.filter((item) => ["sent", "general", "submission_accepted"].includes(item.status));
-    if (queueFilter === "action") return queue.filter((item) => ["draft_ready", "needs_review", "quarantined", "error"].includes(item.status));
+    if (queueFilter === "action") return queue.filter((item) => ["draft_ready", "needs_review", "error"].includes(item.status));
+    if (queueFilter === "quarantine") return queue.filter((item) => item.status === "quarantined");
     return queue;
   }, [inbox, queueFilter]);
 
@@ -714,8 +716,8 @@ interface OperateViewProps {
   savingSchedule: boolean;
   sendingId: string | null;
   actionCount: number;
-  queueFilter: "all" | "action" | "done";
-  setQueueFilter: (value: "all" | "action" | "done") => void;
+  queueFilter: QueueFilter;
+  setQueueFilter: (value: QueueFilter) => void;
   visibleQueue: InboxItem[];
   onRun: () => void;
   onSaveSchedule: () => void;
@@ -803,9 +805,9 @@ function OperateView(props: OperateViewProps) {
               <h2>검토할 메일</h2>
             </div>
             <div className="filter-group" role="group" aria-label="메일 필터">
-              {(["action", "all", "done"] as const).map((filter) => (
+              {(["all", "done", "action", "quarantine"] as const).map((filter) => (
                 <button key={filter} className={queueFilter === filter ? "active" : ""} onClick={() => setQueueFilter(filter)}>
-                  {{ action: "확인 필요", all: "전체", done: "처리 완료" }[filter]}
+                  {{ all: "전체", done: "처리 완료", action: "확인 필요", quarantine: "격리" }[filter]}
                 </button>
               ))}
             </div>
@@ -902,6 +904,19 @@ function QueueCard({ item, sending, onApprove }: {
   const action = item.decision?.action;
   const isQuestion = item.intent === "question";
   const isCompletion = item.intent === "completion";
+  const attachmentPathName = item.artifacts?.attachment_paths?.[0]?.split(/[\\/]/).pop();
+  const displayedAttachment = item.artifacts?.filename
+    || item.artifacts?.source_attachments?.[0]
+    || attachmentPathName;
+  const attachmentLabel = isCompletion
+    ? "최종 취합본"
+    : item.artifacts?.strategy === "generate"
+      ? "새로 생성한 양식"
+      : item.artifacts?.strategy === "review"
+        ? "양식 상태"
+        : item.artifacts?.source_attachments?.length
+          ? "받은 첨부파일"
+          : "첨부파일";
   const extras = extraRecipients.split(",").map((value) => value.trim()).filter(Boolean);
   const editedRecipients = draftRecipients.split(",").map((value) => value.trim()).filter(Boolean);
   const canSend = status === "draft_ready" || status === "sent";
@@ -1027,13 +1042,14 @@ function QueueCard({ item, sending, onApprove }: {
               </button>
             </div>
           </div>
-          {!isQuestion && (
-            <div className="attachment-line">
-              <span>{isCompletion ? "최종 취합본" : item.artifacts?.strategy === "generate" ? "새로 생성한 양식" : "받은 첨부 양식"}</span>
-              <strong>{item.artifacts?.filename || "첨부 없음"}</strong>
-              {item.artifacts?.download && <a href={item.artifacts.download}>양식 확인</a>}
-            </div>
-          )}
+        </div>
+      )}
+
+      {!isQuestion && displayedAttachment && (
+        <div className="attachment-line">
+          <span>{attachmentLabel}</span>
+          <strong>{displayedAttachment}</strong>
+          {item.artifacts?.download && <a href={item.artifacts.download}>양식 확인</a>}
         </div>
       )}
 

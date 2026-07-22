@@ -127,6 +127,7 @@ def test_05_invalid_submission_creates_rejection_mail(tmp_path, monkeypatch):
         db_path=db, prefer_llm=False,
     )
     assert record["status"] == "draft_ready"
+    assert record["artifacts"]["source_attachments"] == ["invalid.xlsx"]
     types = {e["error_type"] for e in record["artifacts"]["validation_errors"]}
     assert {"필수값 누락", "숫자 형식 오류"} <= types
     assert "수정 요청" in record["draft_subject"]
@@ -165,6 +166,7 @@ def test_07_question_is_grounded_and_waits_for_approval_offline(tmp_path, monkey
     assert record["status"] == "draft_ready"
     assert "2026-07-20" in record["draft_body"]
     assert record["decision"]["action"] == "review"
+    assert "source_attachments" not in record["artifacts"]
 
 
 def test_08_deadline_extension_always_requires_approval(tmp_path, monkeypatch):
@@ -186,6 +188,7 @@ def test_09_worker_failure_is_observed_and_replanned(tmp_path, monkeypatch):
         db_path=tmp_path / "db.sqlite", prefer_llm=False,
     )
     assert record["status"] == "needs_review"
+    assert record["artifacts"]["source_attachments"] == ["x.xlsx"]
     actions = [a["action"] for a in record["artifacts"]["agent_trace"]]
     assert "observe_worker_result" in actions
     assert "handoff_to_human" in actions

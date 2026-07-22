@@ -47,6 +47,18 @@ def _db(state: InboxAgentState):
     return state.get("db_path")
 
 
+def _add_source_attachment_metadata(record: dict, message: InboxMessage) -> dict:
+    """Expose received attachment names without treating them as outbound files."""
+    names = [str(name).strip() for name in message.attachments if str(name).strip()]
+    if not names:
+        names = [Path(path).name for path in message.attachment_paths if str(path).strip()]
+    if names:
+        # Keep received files separate from outbound ``attachment_paths`` so a
+        # rejected submission is never attached to a correction request.
+        record.setdefault("artifacts", {}).setdefault("source_attachments", names)
+    return record
+
+
 def _log(state: InboxAgentState, agent: str, action: str, outcome: str, detail=None) -> None:
     job_store.log_action(
         state["event_id"], agent, action, outcome, detail or {},
@@ -945,6 +957,7 @@ def run_mail_event(
     ):
         result = build_inbox_agent_graph().invoke(initial)
     record = result.get("record") or _base_record(result, "needs_review")
+    _add_source_attachment_metadata(record, message)
     record.setdefault("artifacts", {})["agent_trace"] = job_store.list_actions(message.id, db_path)
     record["artifacts"]["architecture"] = "agentic_supervisor_graph"
     return record
@@ -997,6 +1010,7 @@ def run_fixed_mail_event(
             )
         else:
             record = result.get("record") or _base_record(state, "processing_error")
+    _add_source_attachment_metadata(record, message)
     record.setdefault("artifacts", {})["agent_trace"] = job_store.list_actions(message.id, db_path)
     record["artifacts"]["architecture"] = "llm_fixed_workflow"
     return record
