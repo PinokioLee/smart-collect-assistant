@@ -12,6 +12,7 @@ import {
   getSchedule,
   getStyleMails,
   inboxQueue,
+  inboxReset,
   inboxSend,
   saveStyleMail,
   scheduleRunNow,
@@ -217,6 +218,21 @@ export default function MinimalApp() {
       applySchedule(response.status);
       await refreshAutomation(response.status.last_summary);
       setNotice(`메일 확인 완료 · 신규 ${response.status.last_summary?.processed_new ?? 0}건`);
+    } catch (e) {
+      setError(toMessage(e));
+    } finally {
+      setOperating(false);
+    }
+  }
+
+  async function resetDemo() {
+    clearFeedback();
+    setOperating(true);
+    try {
+      await inboxReset(false);
+      await refreshAutomation();
+      setMode("operate");
+      setNotice("전부 초기화했습니다 (0). '지금 메일 확인'을 누르면 에이전트가 처리합니다.");
     } catch (e) {
       setError(toMessage(e));
     } finally {
@@ -527,7 +543,17 @@ export default function MinimalApp() {
             단계별 시연
           </button>
         </div>
-        <SystemStatus health={health} />
+        <div className="header-right">
+          <button
+            className="reset-demo-btn"
+            onClick={resetDemo}
+            disabled={operating}
+            title="검토 큐·취합 잡·로그를 전부 0으로 비웁니다. 이후 '지금 메일 확인'을 누르면 에이전트가 처리합니다 (연습용)"
+          >
+            {operating ? "초기화 중…" : "🔄 시연 초기화"}
+          </button>
+          <SystemStatus health={health} />
+        </div>
       </header>
 
       <main id="main-content" tabIndex={-1}>
@@ -905,6 +931,16 @@ function QueueCard({ item, sending, onApprove }: {
       </div>
       <h3>{item.subject}</h3>
       <p className="sender">{item.sender}</p>
+
+      {item.reasons?.length > 0 && (
+        <p className="reason-box why"><b>판단 사유</b> · {item.reasons.join(" · ")}</p>
+      )}
+      {item.body && (
+        <details className="disclosure original-mail" open={status === "needs_review"}>
+          <summary>받은 원본 메일{status === "needs_review" ? "" : " 보기"}</summary>
+          <pre>{item.body}</pre>
+        </details>
+      )}
 
       {status === "draft_ready" && (
         <div className="draft-summary">

@@ -81,6 +81,30 @@ def _intent_for(text: str, attachments: list[str]) -> str:
     return "other"
 
 
+def _readable_reason(
+    category: str, intent: str, *, has_attachment: bool, has_job_id: bool, injection: bool
+) -> str:
+    """휴리스틱 판단 결과를 사람이 읽기 좋은 한 문장 사유로 요약한다."""
+    if category == "spam":
+        if injection:
+            return "보안 정책을 무시하고 시스템 프롬프트·인증 정보를 회신하라는 지시가 있어 피싱·프롬프트 인젝션 시도로 판단해 실행을 차단했습니다."
+        return "스팸성 신호가 강하게 감지되어 격리 대상으로 분류했습니다."
+    if category == "general":
+        return "취합·스팸 신호가 약하고 사내 공지·안내 성격이라 별도 조치 없이 일반 메일로 분류했습니다."
+    base = {
+        "request": "제목과 본문에서 담당자에게 자료 작성을 요청하는 취합 요청 신호를 확인했습니다.",
+        "submission": "본문의 제출 표현과 첨부파일로 보아 취합 자료 제출로 판단했습니다.",
+        "correction": "기존 제출 자료의 수정·보완 표현이 있어 오류 수정본 재제출로 판단했습니다.",
+        "question": "제출 양식 값·마감 기한 등에 대한 문의 신호가 있어 취합 관련 질문으로 분류했습니다.",
+        "extension": "제출 기한 연장을 요청하는 표현이 있어 연장 요청으로 분류했습니다.",
+    }.get(intent, "취합 업무와 관련된 신호를 확인했습니다.")
+    if has_job_id:
+        return base + " 회신에 취합 작업번호가 포함되어 기존 취합 건과 연결됩니다."
+    if has_attachment:
+        return base + " 엑셀 첨부파일이 함께 확인되었습니다."
+    return base
+
+
 def classify_heuristic(msg: InboxMessage) -> ClassificationResult:
     """재현 가능한 3분류 + 세부 의도 휴리스틱."""
     text = f"{msg.subject}\n{msg.body}"
@@ -139,7 +163,12 @@ def classify_heuristic(msg: InboxMessage) -> ClassificationResult:
         intent=intent,
         confidence=confidence,
         tier=tier,
-        reasons=reasons or ["명확한 취합·스팸 신호 없음"],
+        reasons=[_readable_reason(
+            category, intent,
+            has_attachment=any(a.lower().endswith((".xlsx", ".xls", ".csv")) for a in msg.attachments),
+            has_job_id=bool(re.search(r"\[SC-[0-9A-Za-z_-]+\]", text, flags=re.IGNORECASE)),
+            injection=bool(risk_flags),
+        )],
         risk_flags=risk_flags,
         source="rule",
     )

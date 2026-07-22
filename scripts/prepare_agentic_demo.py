@@ -71,9 +71,13 @@ def prepare(live_llm: bool) -> None:
         _message(
             "DEMO-REQ",
             "[취합 요청] 7월 프로젝트 실적 제출 안내",
-            "프로젝트번호, 담당자, 매출액, 진행상태를 2026년 7월 25일 17시까지 취합해 주세요. "
-            "대상자는 alpha@company.com, beta@company.com, gamma@company.com 입니다. "
-            "기존 양식이 없으므로 새 양식이 필요합니다.",
+            "안녕하세요, 프로젝트 담당자 여러분.\n\n"
+            "7월 프로젝트 실적을 취합하고자 안내드립니다. 아래 항목을 작성하시어 "
+            "2026년 7월 25일(금) 17시까지 회신해 주시기 바랍니다.\n\n"
+            "- 작성 항목: 프로젝트번호, 담당자, 매출액, 진행상태(정상/지연/보류)\n"
+            "- 대상자: alpha@company.com, beta@company.com, gamma@company.com\n"
+            "- 이번에는 기존 양식이 없어 새 양식으로 작성 부탁드립니다.\n\n"
+            "바쁘시더라도 기한 내 협조 부탁드립니다. 감사합니다.\n\n기획팀 드림",
             sender="manager@company.com",
         ),
         live_llm=live_llm,
@@ -120,7 +124,10 @@ def prepare(live_llm: bool) -> None:
         _message(
             "DEMO-BAD",
             "[SC-DEMO-SALES] 실적 제출합니다",
-            "첨부 파일 확인 부탁드립니다.",
+            "안녕하세요, 기획팀 담당자님.\n\n"
+            "요청 주신 7월 프로젝트 실적 취합 건, 저희 파트 자료를 작성하여 회신드립니다. "
+            "첨부파일 확인 부탁드립니다.\n\n"
+            "감사합니다.\nAlpha 드림",
             sender="alpha@company.com",
             path=str(bad),
         ),
@@ -136,7 +143,10 @@ def prepare(live_llm: bool) -> None:
         _message(
             "DEMO-CORRECT",
             "[SC-DEMO-SALES] 오류 수정본 재제출",
-            "필수값과 금액 형식을 수정했습니다.",
+            "안녕하세요, 기획팀 담당자님.\n\n"
+            "앞서 제출한 자료에서 담당자명이 누락되고 매출액이 숫자 형식이 아니라는 "
+            "안내를 받았습니다. 지적해 주신 부분을 수정하여 다시 보내드리니 확인 부탁드립니다.\n\n"
+            "번거롭게 해드려 죄송합니다.\nAlpha 드림",
             sender="alpha@company.com",
             path=str(corrected),
         ),
@@ -163,7 +173,10 @@ def prepare(live_llm: bool) -> None:
         _message(
             "DEMO-ORPHAN",
             "취합 파일 제출합니다",
-            "어느 취합 건인지 제목에 작업번호를 넣지 못했습니다.",
+            "안녕하세요.\n\n"
+            "요청하신 취합 자료를 작성하여 제출합니다. 첨부파일 확인 부탁드립니다.\n"
+            "작업번호를 메일에 기재하지 못한 점 양해 부탁드립니다.\n\n"
+            "감사합니다.",
             sender="unknown@company.com",
             path=str(corrected),
         ),
@@ -204,8 +217,11 @@ def prepare(live_llm: bool) -> None:
         _message(
             "DEMO-QUESTION",
             "[SC-DEMO-SALES] 진행상태 값 문의",
-            "제출 양식의 진행상태 컬럼에 어떤 값을 넣어야 하는지, 제출 기한이 정확히 "
-            "언제까지인지 확인 부탁드립니다.",
+            "안녕하세요, 기획팀 담당자님.\n\n"
+            "제출 양식을 작성하던 중 문의사항이 있어 연락드립니다. "
+            "진행상태 컬럼에는 어떤 값을 입력해야 하나요? 그리고 제출 기한이 정확히 "
+            "언제까지인지도 확인 부탁드립니다.\n\n"
+            "감사합니다.\nAlpha 드림",
             sender="alpha@company.com",
         ),
         live_llm=live_llm,
@@ -220,7 +236,10 @@ def prepare(live_llm: bool) -> None:
         _message(
             "DEMO-BETA-OK",
             "[SC-DEMO-SALES] 실적 제출합니다",
-            "첨부 파일 확인 부탁드립니다.",
+            "안녕하세요, 기획팀 담당자님.\n\n"
+            "요청 주신 7월 프로젝트 실적 취합 건, 저희 파트 자료를 작성하여 회신드립니다. "
+            "첨부파일 확인 부탁드립니다.\n\n"
+            "감사합니다.\nBeta 드림",
             sender="beta@company.com",
             path=str(beta_ok),
         ),
@@ -236,7 +255,10 @@ def prepare(live_llm: bool) -> None:
         _message(
             "DEMO-GAMMA-OK",
             "[SC-DEMO-SALES] 실적 제출합니다",
-            "첨부 파일 확인 부탁드립니다.",
+            "안녕하세요, 기획팀 담당자님.\n\n"
+            "요청 주신 7월 프로젝트 실적 취합 건, 저희 파트 자료를 작성하여 회신드립니다. "
+            "첨부파일 확인 부탁드립니다.\n\n"
+            "감사합니다.\nGamma 드림",
             sender="gamma@company.com",
             path=str(gamma_ok),
         ),

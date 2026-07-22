@@ -289,6 +289,7 @@ export interface InboxItem {
   message_id: string;
   sender: string;
   subject: string;
+  body?: string | null;
   received_at: string;
   classification: string;
   intent?: "request" | "submission" | "question" | "correction" | "extension" | "reminder" | "completion" | "other";
@@ -349,6 +350,13 @@ export async function inboxIngest(useLlm = true): Promise<IngestResult> {
   const form = new FormData();
   form.append("use_llm", String(useLlm));
   const { data } = await client.post<IngestResult>("/inbox/ingest", form);
+  return data;
+}
+
+export async function inboxReset(
+  seed = true
+): Promise<{ ok: boolean; seeded: boolean; error: string | null; counts: Record<string, number> }> {
+  const { data } = await client.post("/inbox/reset", null, { params: { seed } });
   return data;
 }
 

@@ -155,6 +155,7 @@ def _record_from(
         "message_id": msg.id,
         "sender": msg.sender,
         "subject": msg.subject,
+        "body": msg.body,
         "received_at": msg.received_at,
         "classification": cls.label,
         "intent": cls.intent,

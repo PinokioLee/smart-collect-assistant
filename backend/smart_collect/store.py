@@ -27,7 +27,7 @@ from .config import DATA_DIR
 DEFAULT_DB = DATA_DIR / "inbox_store.db"
 
 _COLUMNS = [
-    "message_id", "sender", "subject", "received_at",
+    "message_id", "sender", "subject", "body", "received_at",
     "classification", "confidence", "tier", "status",
     "draft_subject", "draft_body", "recipients", "reasons",
     "source", "sent", "error", "processed_at",
@@ -63,6 +63,7 @@ def init_db(db_path: str | Path | None = None) -> None:
                 message_id    TEXT PRIMARY KEY,
                 sender        TEXT,
                 subject       TEXT,
+                body          TEXT,
                 received_at   TEXT,
                 classification TEXT,
                 confidence    REAL,
@@ -92,7 +93,7 @@ def init_db(db_path: str | Path | None = None) -> None:
         }
         migrations = {
             "intent": "TEXT", "risk_flags": "TEXT", "decision": "TEXT",
-            "artifacts": "TEXT", "sent_message_id": "TEXT",
+            "artifacts": "TEXT", "sent_message_id": "TEXT", "body": "TEXT",
         }
         for name, sql_type in migrations.items():
             if name not in existing:

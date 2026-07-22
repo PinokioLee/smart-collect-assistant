@@ -225,6 +225,47 @@ def inbox_queue(status: str | None = None) -> dict:
     }
 
 
+def _clear_inbox_tables() -> None:
+    """검토 큐·취합 잡·제출·실행 로그를 모두 비운다 (전부 0)."""
+    import sqlite3
+
+    store.init_db()
+    job_store.init_job_tables()
+    with sqlite3.connect(str(store.DEFAULT_DB)) as conn:
+        for table in ("processed_mails", "collection_jobs", "job_submissions", "agent_actions"):
+            conn.execute(f"DELETE FROM {table}")
+        conn.commit()
+
+
+def _run_demo_seed() -> None:
+    """결정론 모드로 시연용 데모 시나리오를 실제 에이전트 파이프라인에 주입한다.
+    LLM 호출/비용 없음. 확인 필요 6 · 자동 완료 2 · 격리 1을 재현한다."""
+    import importlib.util
+
+    root = Path(__file__).resolve().parent.parent
+    script = root / "scripts" / "prepare_agentic_demo.py"
+    spec = importlib.util.spec_from_file_location("prepare_agentic_demo", script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)  # type: ignore[union-attr]
+    module.prepare(live_llm=False)
+
+
+@app.post("/api/inbox/reset")
+def inbox_reset(seed: bool = False) -> dict:
+    """시연 초기화: 검토 큐·취합 잡·제출·실행 로그를 모두 비운다(전부 0).
+    seed=True이면 데모 데이터도 다시 생성한다(기본은 비우기만)."""
+    _clear_inbox_tables()
+    seeded = False
+    error = None
+    if seed:
+        try:
+            _run_demo_seed()
+            seeded = True
+        except Exception as exc:  # noqa: BLE001
+            error = str(exc)
+    return {"ok": True, "seeded": seeded, "error": error, "counts": store.counts_by_status()}
+
+
 @app.get("/api/agent/jobs")
 def agent_jobs(status: str | None = None) -> dict:
     jobs = job_store.list_jobs(status=status)
@@ -275,7 +316,28 @@ async def set_schedule(request: Request) -> dict:
 
 @app.post("/api/schedule/run-now")
 def schedule_run_now() -> dict:
-    """스케줄과 무관하게 지금 즉시 1회 수집한다."""
+    """스케줄과 무관하게 지금 즉시 1회 수집한다.
+    시연(mock) 모드에서는 mock 수신함 = 큐레이션된 데모 시나리오로 보고,
+    실제 에이전트 파이프라인으로 처리해 확인 필요 6 · 자동 완료 2 · 격리 1을 재현한다."""
+    if settings.email_read_mode == "mock":
+        _run_demo_seed()
+        counts = store.counts_by_status()
+        total = sum(counts.values())
+        summary = {
+            "fetched": total,
+            "processed_new": total,
+            "by_status": counts,
+            "by_category": {},
+            "automation": {},
+            "deadline_agent": {},
+        }
+        cfg = sched_mod.load_config()
+        cfg["last_run"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        cfg["last_summary"] = summary
+        cfg["last_reason"] = "manual-demo"
+        cfg["last_error"] = None
+        sched_mod.save_config(cfg)
+        return {"result": summary, "status": sched_mod.status()}
     return {"result": sched_mod.run_now(), "status": sched_mod.status()}
 
 
